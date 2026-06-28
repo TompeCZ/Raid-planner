@@ -1,0 +1,22 @@
+{
+  "name": "raid-planner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Raid & Absence Planner — DB layer (Drizzle schema + migrations)",
+  "type": "module",
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.36.4",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.28.1",
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2"
+  }
+}

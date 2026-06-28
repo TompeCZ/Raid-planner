@@ -270,6 +270,15 @@ CREATE TRIGGER raid_propagate_time_trg
 -- Scope na INSERT / UPDATE OF raid_id,user_id — pouhá propagace času (UPDATE
 -- starts_at/ends_at) tento trigger nespouští, takže reschedule raidu neselže
 -- kvůli absenci u existujících přiřazení.
+--
+-- POZOR — tento trigger hlídá JEN FORWARD směr: nelze přiřadit hráče, který už
+-- má kolidující absenci. REVERSE směr (absence vytvořená/rozšířená až PO
+-- existujícím CONFIRMED assignmentu — withdraw / "needs replacement" flow)
+-- NENÍ a NEMÁ být v DB tvrdě blokován (jinak by nešlo zadat absenci po sestavení
+-- setupu). Řeší se APLIKAČNĚ: po INSERT/rozšíření absence dohledat kolidující
+-- CONFIRMED assignmenty a vyflagovat je RL. Invariant 2 tedy NENÍ plně uzavřený
+-- triggerem. Případná DB pomoc = lehký trigger na absence, který kolidující
+-- assignmenty jen OZNAČÍ (nikdy neraisne); do v1 stačí app-level.
 CREATE OR REPLACE FUNCTION assignment_block_on_absence() RETURNS trigger AS $$
 DECLARE
     v_raid_date date;
@@ -332,9 +341,13 @@ BEGIN
     END IF;
 
     -- INVARIANT 4 (SINGLE): právě jedna postava na signup
+    -- (aktuální řádek z počtu vylučujeme, aby UPDATE jediné postavy — např.
+    --  loot_note — neselhal kvůli započtení sebe sama)
     IF v_mode = 'SINGLE' THEN
         SELECT count(*) INTO v_count
-          FROM signup_character sc WHERE sc.signup_id = NEW.signup_id;
+          FROM signup_character sc
+         WHERE sc.signup_id = NEW.signup_id
+           AND sc.id <> NEW.id;
         IF v_count >= 1 THEN
             RAISE EXCEPTION 'SINGLE mód: signup smí nabídnout jen jednu postavu.';
         END IF;

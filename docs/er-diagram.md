@@ -30,6 +30,7 @@ erDiagram
         text displayName
         enum role "ADMIN | RAID_LEADER | MEMBER"
         timestamptz createdAt
+        timestamptz deletedAt "nullable (soft delete, nikdy hard)"
     }
 
     Character {
@@ -95,8 +96,8 @@ erDiagram
         enum roleInRaid "TANK | HEALER | MELEE | RANGED"
         int groupNo "1-5 pro 25man, nullable"
         enum status "CONFIRMED | BENCH"
-        timestamptz raidStartsAt "denorm. z Raid (trigger)"
-        timestamptz raidEndsAt "denorm. z Raid (trigger)"
+        timestamptz startsAt "denorm. z Raid (plní výhradně trigger)"
+        timestamptz endsAt "denorm. z Raid (plní výhradně trigger)"
     }
 
     Absence {
@@ -144,10 +145,12 @@ erDiagram
 |---|---|---|
 | 1 — postava max v 1 CONFIRMED překrývajícím se raidu | `EXCLUDE USING gist` (partial `WHERE status='CONFIRMED'`), vyžaduje `btree_gist` | `Assignment` |
 | 2 — blokace Assignmentu při Absenci majitele | `BEFORE INSERT/UPDATE` trigger | `Assignment` |
-| 3 — signup jen postav s `isRaidReady` daného hráče | `BEFORE INSERT/UPDATE` trigger | `SignupCharacter` |
-| 4 — SINGLE = právě 1 postava, ALL = ≥1 | trigger (počet vs. `Raid.signupMode`) | `SignupCharacter` |
+| 3 — signup jen postav s `isRaidReady` daného hráče (+ vlastnictví, ne‑smazané) | `BEFORE INSERT/UPDATE` trigger | `SignupCharacter` |
+| 4 — SINGLE = právě 1 postava | trigger (počet vs. `Raid.signupMode`) | `SignupCharacter` |
+| 4 — ALL = ≥1 postava (jen YES/LATE/TENTATIVE) | **aplikačně při submitu** (ne v DB) | `Signup` |
 | — `Assignment.userId == Character.userId` | composite FK `(characterId,userId)→Character(id,userId)` | `Assignment` |
 | — idempotence generování | partial `UNIQUE(templateId, startsAt) WHERE templateId IS NOT NULL` | `Raid` |
+| — zachování historie | `User` soft delete; všechny FK na `User` `ON DELETE RESTRICT` | všechny child tabulky |
 
 ## Pozn.: proč denormalizace času na Assignment
 

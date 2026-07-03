@@ -100,6 +100,10 @@ export const character = pgTable(
   ],
 );
 
+export type User = typeof user.$inferSelect;
+export type Character = typeof character.$inferSelect;
+export type NewCharacter = typeof character.$inferInsert;
+
 /* -------------------------------------------------------------------------- */
 /* RaidTemplate                                                               */
 /* -------------------------------------------------------------------------- */

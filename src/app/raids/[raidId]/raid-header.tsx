@@ -12,7 +12,7 @@ function toDateTimeLocalValue(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function RaidHeader({ raid }: { raid: Raid }) {
+export function RaidHeader({ raid, canManage }: { raid: Raid; canManage: boolean }) {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -108,7 +108,7 @@ export function RaidHeader({ raid }: { raid: Raid }) {
       </p>
       {raid.notes && <p style={{ opacity: 0.7 }}>{raid.notes}</p>}
       {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
-      {raid.status === "OPEN" && (
+      {canManage && raid.status === "OPEN" && (
         <div style={{ display: "flex", gap: "0.5rem" }}>
           <button onClick={() => setEditing(true)}>Upravit raid</button>
           <button onClick={handleCancel} disabled={isPending}>

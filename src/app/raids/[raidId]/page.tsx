@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth";
+import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
 import { getRaidPageData } from "./actions";
 import { SignupForm } from "./signup-form";
 import { RaidHeader } from "./raid-header";
@@ -24,7 +24,7 @@ export default async function RaidDetailPage({
       <p>
         <Link href="/raids">← Zpět na raidy</Link>
       </p>
-      <RaidHeader raid={raid} />
+      <RaidHeader raid={raid} canManage={canManageRaids(appUser)} />
 
       {raid.status === "OPEN" ? (
         <>

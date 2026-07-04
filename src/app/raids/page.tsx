@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth";
+import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
 import { listOpenRaids } from "./actions";
 import { RaidForm } from "./raid-form";
 
@@ -32,8 +32,12 @@ export default async function RaidsPage() {
         ))}
       </ul>
 
-      <h2>Vytvořit raid</h2>
-      <RaidForm />
+      {canManageRaids(appUser) && (
+        <>
+          <h2>Vytvořit raid</h2>
+          <RaidForm />
+        </>
+      )}
     </main>
   );
 }

@@ -52,6 +52,11 @@ async function ensureAppUser(discordId: string, displayName: string): Promise<Us
  * dopáruje/obnoví řádek v `user`). `cache()` sdílí výsledek napříč Server
  * Components v rámci jednoho requestu.
  */
+/** Správa raidů (create/update/cancel) je jen pro RAID_LEADER a ADMIN. */
+export function canManageRaids(appUser: User): boolean {
+  return appUser.role === "ADMIN" || appUser.role === "RAID_LEADER";
+}
+
 export const getCurrentAppUser = cache(async (): Promise<User | null> => {
   const supabase = await createClient();
   const {

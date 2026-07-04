@@ -4,12 +4,18 @@ import { revalidatePath } from "next/cache";
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { raid } from "@/db/schema";
-import { getCurrentAppUser } from "@/lib/auth";
+import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
 import { readRaidForm } from "./raid-validation";
 
 async function requireAppUser() {
   const appUser = await getCurrentAppUser();
   if (!appUser) throw new Error("Nepřihlášeno.");
+  return appUser;
+}
+
+async function requireRaidLeader() {
+  const appUser = await requireAppUser();
+  if (!canManageRaids(appUser)) throw new Error("Akce vyžaduje roli RAID_LEADER nebo ADMIN.");
   return appUser;
 }
 
@@ -23,9 +29,7 @@ export async function listOpenRaids() {
 }
 
 export async function createRaid(formData: FormData) {
-  // VARIANTA B: create raidu smí kdokoli přihlášený.
-  // TODO: omezit na RAID_LEADER/ADMIN
-  await requireAppUser();
+  await requireRaidLeader();
   const values = readRaidForm(formData);
 
   await db.insert(raid).values({ ...values, status: "OPEN" });

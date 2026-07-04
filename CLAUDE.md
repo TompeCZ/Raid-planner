@@ -112,10 +112,10 @@ Feature vertikály žijí pod `src/app/<feature>/`, typicky s:
   `startTransition` kolem přímého volání server actions (žádné samostatné API routes).
 
 Aktuálně implementované vertikály: `characters` (CRUD vlastních postav, soft delete) a `raids` +
-`raids/[raidId]` (CRUD raidů, signup hráče s poolem postav, zobrazení rosteru). Autorizace pro
-create/update/cancel raidu je zatím otevřená komukoliv přihlášenému ("VARIANTA B" v kódu), s `TODO`
-komentáři značícími, kde by se to mělo omezit na `RAID_LEADER`/`ADMIN` — než budeš předpokládat, že
-kontrola role existuje, ověř tyhle TODO.
+`raids/[raidId]` (CRUD raidů, signup hráče s poolem postav, zobrazení rosteru). Create/update/cancel
+raidu je omezené na role `RAID_LEADER`/`ADMIN` — predikát `canManageRaids()` v `src/lib/auth.ts`,
+vynucený v server actions přes lokální `requireRaidLeader()` a zrcadlený v UI (skrytí formulářů a
+tlačítek ne-leaderům).
 
 Zatím neimplementováno (existuje jen jako schema/spec, viz `docs/spec.md` §7–8): setup builder pro
 `Assignment`, `AttendanceRecord`, `Note`, `AuditLog`, Discord webhook push, WCL import háčky.

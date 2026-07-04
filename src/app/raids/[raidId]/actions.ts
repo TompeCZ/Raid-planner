@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { raid, signup, signupCharacter, character, signupStatus, user } from "@/db/schema";
-import { getCurrentAppUser } from "@/lib/auth";
+import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
 import { readRaidForm } from "../raid-validation";
 
 const SIGNUP_STATUSES = signupStatus.enumValues;
@@ -12,6 +12,12 @@ const SIGNUP_STATUSES = signupStatus.enumValues;
 async function requireAppUser() {
   const appUser = await getCurrentAppUser();
   if (!appUser) throw new Error("Nepřihlášeno.");
+  return appUser;
+}
+
+async function requireRaidLeader() {
+  const appUser = await requireAppUser();
+  if (!canManageRaids(appUser)) throw new Error("Akce vyžaduje roli RAID_LEADER nebo ADMIN.");
   return appUser;
 }
 
@@ -92,11 +98,9 @@ export async function getRaidPageData(raidId: string) {
   };
 }
 
-/** Upraví raid (stejná pravidla jako create — viz Varianta B). */
+/** Upraví raid — jen RAID_LEADER/ADMIN. */
 export async function updateRaid(raidId: string, formData: FormData) {
-  // VARIANTA B: stejně jako create — zatím bez omezení role.
-  // TODO: omezit na RAID_LEADER/ADMIN
-  await requireAppUser();
+  await requireRaidLeader();
   await requireRaid(raidId);
   const values = readRaidForm(formData);
 
@@ -105,11 +109,9 @@ export async function updateRaid(raidId: string, formData: FormData) {
   revalidatePath(`/raids/${raidId}`);
 }
 
-/** Zruší raid (status -> CANCELLED) — zmizí ze seznamu otevřených raidů. */
+/** Zruší raid (status -> CANCELLED) — jen RAID_LEADER/ADMIN. */
 export async function cancelRaid(raidId: string) {
-  // VARIANTA B: stejně jako create — zatím bez omezení role.
-  // TODO: omezit na RAID_LEADER/ADMIN
-  await requireAppUser();
+  await requireRaidLeader();
   await requireRaid(raidId);
 
   await db.update(raid).set({ status: "CANCELLED" }).where(eq(raid.id, raidId));

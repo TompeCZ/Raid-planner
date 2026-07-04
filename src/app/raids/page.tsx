@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
+import { findConflictedRaidIds } from "@/lib/absence-conflicts";
 import { listActiveRaids } from "./actions";
 import { RaidForm } from "./raid-form";
 
@@ -10,11 +11,15 @@ export default async function RaidsPage() {
 
   const raids = await listActiveRaids();
   const now = new Date();
+  const isManager = canManageRaids(appUser);
+  const conflictedRaidIds = isManager
+    ? await findConflictedRaidIds(raids.map((r) => r.id))
+    : new Set<string>();
 
   return (
     <main>
       <p>
-        <Link href="/characters">← Moje postavy</Link>
+        <Link href="/characters">← Moje postavy</Link> · <Link href="/absences">Moje absence</Link>
       </p>
       <h1>Aktivní raidy</h1>
 
@@ -31,11 +36,14 @@ export default async function RaidsPage() {
               {r.status === "LOCKED" && " · uzamčeno"}
             </span>
             {r.endsAt < now && <strong style={{ color: "#e8b339" }}> · už proběhl</strong>}
+            {conflictedRaidIds.has(r.id) && (
+              <strong style={{ color: "#ff6b6b" }}> · ⚠ absence-konflikt v setupu</strong>
+            )}
           </li>
         ))}
       </ul>
 
-      {canManageRaids(appUser) && (
+      {isManager && (
         <>
           <h2>Vytvořit raid</h2>
           <RaidForm />

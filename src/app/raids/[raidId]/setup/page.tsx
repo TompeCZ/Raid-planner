@@ -17,7 +17,7 @@ export default async function SetupPage({ params }: { params: Promise<{ raidId: 
   const { raid, roster, otherCharacters, assignments, conflictedAssignmentIds } = data;
 
   return (
-    <main>
+    <main className="wide">
       <p>
         <Link href={`/raids/${raidId}`}>← Zpět na raid</Link>
       </p>

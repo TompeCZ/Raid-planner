@@ -307,9 +307,12 @@ export function SetupBoard({
   }
 
   function renderRosterEntry(c: RosterCharacter, siblingsMap: Map<string, RosterCharacter[]>) {
-    const reservedBy = reservedCharacterIdByUserId.get(c.userId);
-    const disabled = reservedBy !== undefined && reservedBy !== c.characterId;
     const isSelected = selected === c.characterId;
+    // Zešedne i postava, která už JE přiřazená/benchnutá (ne jen její sourozenci) —
+    // dál se s ní manipuluje přes kartu v mřížce/na benchi, ne přes roster. Výjimka:
+    // dokud je právě "vybraná" (probíhá její umístění), zůstává klikatelná kvůli deselectu.
+    const reservedBy = reservedCharacterIdByUserId.get(c.userId);
+    const disabled = reservedBy !== undefined && !isSelected;
     const currentAssignment = assignmentByCharacterId.get(c.characterId);
     return (
       <div

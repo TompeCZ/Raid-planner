@@ -23,6 +23,12 @@ main {
   padding: 2rem 1rem;
 }
 
+/* Stránky s víc-sloupcovým layoutem (setup builder) potřebují celou šířku obrazovky. */
+main.wide {
+  max-width: none;
+  padding: 2rem;
+}
+
 button {
   font: inherit;
   cursor: pointer;

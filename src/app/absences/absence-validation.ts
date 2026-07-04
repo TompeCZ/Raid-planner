@@ -12,3 +12,14 @@ export function readAbsenceForm(formData: FormData) {
 
   return { fromDate, toDate, note: note || null };
 }
+
+/** Mapuje hlášku z readAbsenceForm na jméno pole — pro zvýraznění konkrétního inputu ve formuláři. */
+const FIELD_BY_ERROR: Record<string, string> = {
+  "Od kdy je povinné.": "fromDate",
+  "Do kdy je povinné.": "toDate",
+  "Konec musí být stejný den nebo po začátku.": "toDate",
+};
+
+export function fieldForAbsenceFormError(message: string): string | null {
+  return FIELD_BY_ERROR[message] ?? null;
+}

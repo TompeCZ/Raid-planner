@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import type { Character } from "@/db/schema";
+import { restoreFormValues } from "@/lib/form-restore";
 import { createCharacter, updateCharacter } from "./actions";
 import { WOW_CLASSES } from "./constants";
 
@@ -32,6 +33,7 @@ export function CharacterForm({
         onDone?.();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Něco se pokazilo.");
+        restoreFormValues(formRef.current, formData);
       }
     });
   }

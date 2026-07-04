@@ -2,6 +2,20 @@ import { signupMode as signupModeEnum } from "@/db/schema";
 
 const SIGNUP_MODES = signupModeEnum.enumValues;
 
+/** Mapuje hlášku z readRaidForm na jméno pole — pro zvýraznění konkrétního inputu ve formuláři. */
+const FIELD_BY_ERROR: Record<string, string> = {
+  "Instance je povinná.": "instance",
+  "Neplatné začátek.": "startsAt",
+  "Neplatné konec.": "endsAt",
+  "Konec musí být po začátku.": "endsAt",
+  "Neplatný signup mode.": "signupMode",
+  "Kapacita musí být kladné celé číslo.": "capacity",
+};
+
+export function fieldForRaidFormError(message: string): string | null {
+  return FIELD_BY_ERROR[message] ?? null;
+}
+
 /** `datetime-local` input nemá timezone — parsuje se jako lokální čas serveru. */
 function parseDateTimeLocal(value: string, label: string): Date {
   const date = new Date(value);

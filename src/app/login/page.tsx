@@ -4,7 +4,7 @@ import { DiscordLoginButton } from "./discord-login-button";
 
 export default async function LoginPage() {
   const appUser = await getCurrentAppUser();
-  if (appUser) redirect("/characters");
+  if (appUser) redirect("/");
 
   return (
     <main>

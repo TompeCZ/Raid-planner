@@ -20,7 +20,8 @@ export default async function CharactersPage() {
       </div>
       <p style={{ opacity: 0.7 }}>Přihlášen jako {appUser.displayName}</p>
       <p>
-        <Link href="/raids">Raidy →</Link> · <Link href="/absences">Moje absence →</Link>
+        <Link href="/">← Dashboard</Link> · <Link href="/raids">Raidy →</Link> ·{" "}
+        <Link href="/absences">Moje absence →</Link>
       </p>
 
       <ul style={{ margin: "1.5rem 0", padding: 0 }}>

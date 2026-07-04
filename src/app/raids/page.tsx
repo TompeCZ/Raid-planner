@@ -19,7 +19,8 @@ export default async function RaidsPage() {
   return (
     <main>
       <p>
-        <Link href="/characters">← Moje postavy</Link> · <Link href="/absences">Moje absence</Link>
+        <Link href="/">← Dashboard</Link> · <Link href="/characters">Moje postavy</Link> ·{" "}
+        <Link href="/absences">Moje absence</Link>
       </p>
       <h1>Aktivní raidy</h1>
 

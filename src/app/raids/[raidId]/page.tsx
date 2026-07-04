@@ -26,6 +26,12 @@ export default async function RaidDetailPage({
       </p>
       <RaidHeader raid={raid} canManage={canManageRaids(appUser)} />
 
+      {canManageRaids(appUser) && (
+        <p>
+          <Link href={`/raids/${raid.id}/setup`}>Setup builder →</Link>
+        </p>
+      )}
+
       {raid.status === "OPEN" ? (
         <>
           <h2>Přihlásit se</h2>

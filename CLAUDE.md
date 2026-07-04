@@ -33,10 +33,12 @@ npm run db:migrate        # aplikuje migrace z drizzle/
 npm run db:push           # promítne schema přímo bez migračního souboru — jen pro dev
 npm run db:studio         # GUI Drizzle Studio
 
+npm test                  # unit testy (Vitest, `vitest run`)
 npx tsc --noEmit           # typecheck (samostatný lint skript není definován)
 ```
 
-Testovací sada v repu zatím není.
+Unit testy (Vitest) žijí vedle testovaného kódu jako `*.test.ts` — zatím jen validace formuláře
+raidu (`src/app/raids/raid-validation.test.ts`). Testy nesahají na DB ani na Supabase.
 
 Vyžaduje `.env` (viz `.env.example`) s `DATABASE_URL` (Supabase Postgres), `NEXT_PUBLIC_SUPABASE_URL`,
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` a `NEXT_PUBLIC_SITE_URL`. Discord OAuth client id/secret se nastavují

@@ -169,6 +169,9 @@ export const raid = pgTable(
   ],
 );
 
+export type Raid = typeof raid.$inferSelect;
+export type NewRaid = typeof raid.$inferInsert;
+
 /* -------------------------------------------------------------------------- */
 /* Signup  (jeden signup na hráče a raid)                                     */
 /* -------------------------------------------------------------------------- */
@@ -187,6 +190,8 @@ export const signup = pgTable(
   },
   (t) => [unique("signup_raid_user_uq").on(t.raidId, t.userId)],
 );
+
+export type Signup = typeof signup.$inferSelect;
 
 /* -------------------------------------------------------------------------- */
 /* SignupCharacter  (pool postav po ořezu)                                    */

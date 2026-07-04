@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth";
 import { listMyCharacters } from "./actions";
@@ -18,6 +19,9 @@ export default async function CharactersPage() {
         <LogoutButton />
       </div>
       <p style={{ opacity: 0.7 }}>Přihlášen jako {appUser.displayName}</p>
+      <p>
+        <Link href="/raids">Raidy →</Link>
+      </p>
 
       <ul style={{ margin: "1.5rem 0", padding: 0 }}>
         {characters.length === 0 && <li style={{ listStyle: "none" }}>Zatím žádné postavy.</li>}

@@ -2,7 +2,15 @@
 
 import { useState, useTransition } from "react";
 import type { Raid } from "@/db/schema";
-import { updateRaid, cancelRaid } from "./actions";
+import { updateRaid, setRaidStatus } from "./actions";
+import {
+  RAID_STATUS_TRANSITIONS,
+  RAID_STATUS_ACTION_LABELS,
+  isRaidEditable,
+} from "../raid-status";
+
+/** Destruktivní/koncové přechody chceme potvrdit; LOCKED/OPEN jsou vratné. */
+const CONFIRMED_TRANSITIONS: Raid["status"][] = ["DONE", "CANCELLED"];
 
 const SIGNUP_MODES = ["ALL", "SINGLE"] as const;
 
@@ -29,12 +37,17 @@ export function RaidHeader({ raid, canManage }: { raid: Raid; canManage: boolean
     });
   }
 
-  function handleCancel() {
-    if (!confirm(`Zrušit raid ${raid.instance}?`)) return;
+  function handleStatusChange(status: Raid["status"]) {
+    if (
+      CONFIRMED_TRANSITIONS.includes(status) &&
+      !confirm(`${RAID_STATUS_ACTION_LABELS[status]}: ${raid.instance}?`)
+    ) {
+      return;
+    }
     setError(null);
     startTransition(async () => {
       try {
-        await cancelRaid(raid.id);
+        await setRaidStatus(raid.id, status);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Něco se pokazilo.");
       }
@@ -108,12 +121,18 @@ export function RaidHeader({ raid, canManage }: { raid: Raid; canManage: boolean
       </p>
       {raid.notes && <p style={{ opacity: 0.7 }}>{raid.notes}</p>}
       {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
-      {canManage && raid.status === "OPEN" && (
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button onClick={() => setEditing(true)}>Upravit raid</button>
-          <button onClick={handleCancel} disabled={isPending}>
-            Zrušit raid
-          </button>
+      {canManage && (
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          {isRaidEditable(raid.status) && (
+            <button onClick={() => setEditing(true)} disabled={isPending}>
+              Upravit raid
+            </button>
+          )}
+          {RAID_STATUS_TRANSITIONS[raid.status].map((target) => (
+            <button key={target} onClick={() => handleStatusChange(target)} disabled={isPending}>
+              {RAID_STATUS_ACTION_LABELS[target]}
+            </button>
+          ))}
         </div>
       )}
     </div>

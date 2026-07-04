@@ -6,6 +6,9 @@ import { db } from "@/db/client";
 import { raid, signup, signupCharacter, character, signupStatus, user } from "@/db/schema";
 import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
 import { readRaidForm } from "../raid-validation";
+import { canTransitionRaidStatus, isRaidEditable } from "../raid-status";
+
+type RaidStatus = (typeof raid.status.enumValues)[number];
 
 const SIGNUP_STATUSES = signupStatus.enumValues;
 
@@ -98,10 +101,13 @@ export async function getRaidPageData(raidId: string) {
   };
 }
 
-/** Upraví raid — jen RAID_LEADER/ADMIN. */
+/** Upraví raid — jen RAID_LEADER/ADMIN, a jen dokud raid není v koncovém stavu. */
 export async function updateRaid(raidId: string, formData: FormData) {
   await requireRaidLeader();
-  await requireRaid(raidId);
+  const raidRow = await requireRaid(raidId);
+  if (!isRaidEditable(raidRow.status)) {
+    throw new Error(`Raid ve stavu ${raidRow.status} už nelze upravovat.`);
+  }
   const values = readRaidForm(formData);
 
   await db.update(raid).set(values).where(eq(raid.id, raidId));
@@ -109,12 +115,16 @@ export async function updateRaid(raidId: string, formData: FormData) {
   revalidatePath(`/raids/${raidId}`);
 }
 
-/** Zruší raid (status -> CANCELLED) — jen RAID_LEADER/ADMIN. */
-export async function cancelRaid(raidId: string) {
+/** Ruční přechod stavu raidu (LOCKED/DONE/CANCELLED/znovu OPEN) — jen RAID_LEADER/ADMIN. */
+export async function setRaidStatus(raidId: string, status: RaidStatus) {
   await requireRaidLeader();
-  await requireRaid(raidId);
+  const raidRow = await requireRaid(raidId);
 
-  await db.update(raid).set({ status: "CANCELLED" }).where(eq(raid.id, raidId));
+  if (!canTransitionRaidStatus(raidRow.status, status)) {
+    throw new Error(`Přechod ${raidRow.status} -> ${status} není povolen.`);
+  }
+
+  await db.update(raid).set({ status }).where(eq(raid.id, raidId));
   revalidatePath("/raids");
   revalidatePath(`/raids/${raidId}`);
 }

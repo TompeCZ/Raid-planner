@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { asc, eq } from "drizzle-orm";
+import { asc, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { raid } from "@/db/schema";
 import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
@@ -19,12 +19,13 @@ async function requireRaidLeader() {
   return appUser;
 }
 
-export async function listOpenRaids() {
+/** Aktivní raidy pro přehled — OPEN i LOCKED (uzamčené jsou pořád k nahlédnutí). */
+export async function listActiveRaids() {
   await requireAppUser();
   return db
     .select()
     .from(raid)
-    .where(eq(raid.status, "OPEN"))
+    .where(inArray(raid.status, ["OPEN", "LOCKED"]))
     .orderBy(asc(raid.startsAt));
 }
 

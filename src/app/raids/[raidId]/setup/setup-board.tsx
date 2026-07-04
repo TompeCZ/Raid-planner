@@ -417,25 +417,6 @@ export function SetupBoard({
 
   return (
     <div>
-      <section style={{ marginBottom: "1rem" }}>
-        <h2>Poznámky k setupu</h2>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={2}
-          style={{ width: "100%", maxWidth: 560 }}
-          disabled={readOnly}
-        />
-        {!readOnly && (
-          <div>
-            <button type="button" onClick={handleSaveNotes} disabled={notesPending}>
-              Uložit poznámku
-            </button>
-          </div>
-        )}
-        {notesError && <p style={{ color: "#ff6b6b" }}>{notesError}</p>}
-      </section>
-
       {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
       {readOnly && (
         <p style={{ opacity: 0.7 }}>Raid je uzavřený (DONE/CANCELLED) — setup je jen k nahlédnutí.</p>
@@ -485,8 +466,8 @@ export function SetupBoard({
         </div>
       )}
 
-      <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap", alignItems: "flex-start" }}>
-        <section style={{ flex: "1 1 320px" }}>
+      <div className="setup-columns">
+        <section className="setup-col-roster">
           <h2>Přihlášené postavy ({filteredRoster.length}/{roster.length})</h2>
           <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
             {ALL_ROLES.map((r) => (
@@ -557,34 +538,11 @@ export function SetupBoard({
             })}
           </div>
 
-          {!readOnly && (
-            <>
-              <h2 style={{ marginTop: "1.5rem" }}>
-                Přidat postavu mimo přihlášené ({otherCharacters.length})
-              </h2>
-              <input
-                placeholder="Hledat jménem postavy nebo hráče…"
-                value={externalSearch}
-                onChange={(e) => setExternalSearch(e.target.value)}
-                style={{ width: "100%", maxWidth: 320, marginBottom: "0.4rem" }}
-              />
-              <div style={{ display: "grid", gap: "0.3rem", maxHeight: 260, overflowY: "auto" }}>
-                {filteredOther.length === 0 && <p style={{ opacity: 0.7 }}>Nic nenalezeno.</p>}
-                {filteredOther.map((c) => renderRosterEntry(c, otherByUser))}
-              </div>
-            </>
-          )}
         </section>
 
-        <section style={{ flex: "2 1 520px" }}>
-          <h2>Mřížka (8 × 5)</h2>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-              gap: "0.75rem",
-            }}
-          >
+        <section className="setup-col-grid">
+          <h2>Mřížka (8 × {SLOTS_PER_GROUP})</h2>
+          <div className="setup-grid">
             {GROUPS.map((groupNo) => {
               const filledCount = SLOTS.filter((s) => groupSlotMap.has(`${groupNo}-${s}`)).length;
               return (
@@ -599,6 +557,43 @@ export function SetupBoard({
               );
             })}
           </div>
+        </section>
+
+        <section className="setup-col-extra">
+          <h2>Poznámky k setupu</h2>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            style={{ width: "100%" }}
+            disabled={readOnly}
+          />
+          {!readOnly && (
+            <div>
+              <button type="button" onClick={handleSaveNotes} disabled={notesPending}>
+                Uložit poznámku
+              </button>
+            </div>
+          )}
+          {notesError && <p style={{ color: "#ff6b6b" }}>{notesError}</p>}
+
+          {!readOnly && (
+            <>
+              <h2 style={{ marginTop: "1.5rem" }}>
+                Přidat postavu mimo přihlášené ({otherCharacters.length})
+              </h2>
+              <input
+                placeholder="Hledat jménem postavy nebo hráče…"
+                value={externalSearch}
+                onChange={(e) => setExternalSearch(e.target.value)}
+                style={{ width: "100%", marginBottom: "0.4rem" }}
+              />
+              <div style={{ display: "grid", gap: "0.3rem", maxHeight: 320, overflowY: "auto" }}>
+                {filteredOther.length === 0 && <p style={{ opacity: 0.7 }}>Nic nenalezeno.</p>}
+                {filteredOther.map((c) => renderRosterEntry(c, otherByUser))}
+              </div>
+            </>
+          )}
         </section>
       </div>
     </div>

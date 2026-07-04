@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
+import type { CSSProperties } from "react";
 import type { Raid } from "@/db/schema";
-import { restoreFormValues } from "@/lib/form-restore";
 import { updateRaid, setRaidStatus } from "./actions";
 import { fieldForRaidFormError } from "../raid-validation";
 import {
@@ -22,12 +22,38 @@ function toDateTimeLocalValue(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function deriveValues(raid: Raid) {
+  return {
+    instance: raid.instance,
+    startsAt: toDateTimeLocalValue(raid.startsAt),
+    endsAt: toDateTimeLocalValue(raid.endsAt),
+    signupMode: raid.signupMode,
+    capacity: String(raid.capacity),
+    notes: raid.notes ?? "",
+  };
+}
+
+type Values = ReturnType<typeof deriveValues>;
+
 export function RaidHeader({ raid, canManage }: { raid: Raid; canManage: boolean }) {
   const [editing, setEditing] = useState(false);
+  const [values, setValues] = useState<Values>(() => deriveValues(raid));
   const [error, setError] = useState<string | null>(null);
   const [errorField, setErrorField] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const formRef = useRef<HTMLFormElement>(null);
+
+  function setField<K extends keyof Values>(key: K, value: Values[K]) {
+    setValues((v) => ({ ...v, [key]: value }));
+  }
+
+  function openEditing() {
+    // Přenačte formulář z aktuálního raidu — component neremountuje, takže bez
+    // tohohle by se po předchozí úpravě/zrušení zobrazila stará rozpracovaná data.
+    setValues(deriveValues(raid));
+    setError(null);
+    setErrorField(null);
+    setEditing(true);
+  }
 
   function handleUpdate(formData: FormData) {
     setError(null);
@@ -40,12 +66,11 @@ export function RaidHeader({ raid, canManage }: { raid: Raid; canManage: boolean
         const message = e instanceof Error ? e.message : "Něco se pokazilo.";
         setError(message);
         setErrorField(fieldForRaidFormError(message));
-        restoreFormValues(formRef.current, formData);
       }
     });
   }
 
-  function fieldStyle(name: string): React.CSSProperties | undefined {
+  function fieldStyle(name: string): CSSProperties | undefined {
     return errorField === name ? { borderColor: "#ff6b6b", outline: "1px solid #ff6b6b" } : undefined;
   }
 
@@ -68,17 +93,24 @@ export function RaidHeader({ raid, canManage }: { raid: Raid; canManage: boolean
 
   if (editing) {
     return (
-      <form ref={formRef} action={handleUpdate} style={{ display: "grid", gap: "0.6rem", maxWidth: 420 }}>
+      <form action={handleUpdate} style={{ display: "grid", gap: "0.6rem", maxWidth: 420 }}>
         <label>
           Instance
-          <input name="instance" defaultValue={raid.instance} required style={fieldStyle("instance")} />
+          <input
+            name="instance"
+            value={values.instance}
+            onChange={(e) => setField("instance", e.target.value)}
+            required
+            style={fieldStyle("instance")}
+          />
         </label>
         <label>
           Začátek
           <input
             name="startsAt"
             type="datetime-local"
-            defaultValue={toDateTimeLocalValue(raid.startsAt)}
+            value={values.startsAt}
+            onChange={(e) => setField("startsAt", e.target.value)}
             required
             style={fieldStyle("startsAt")}
           />
@@ -88,14 +120,21 @@ export function RaidHeader({ raid, canManage }: { raid: Raid; canManage: boolean
           <input
             name="endsAt"
             type="datetime-local"
-            defaultValue={toDateTimeLocalValue(raid.endsAt)}
+            value={values.endsAt}
+            onChange={(e) => setField("endsAt", e.target.value)}
             required
             style={fieldStyle("endsAt")}
           />
         </label>
         <label>
           Signup mode
-          <select name="signupMode" defaultValue={raid.signupMode} required style={fieldStyle("signupMode")}>
+          <select
+            name="signupMode"
+            value={values.signupMode}
+            onChange={(e) => setField("signupMode", e.target.value as Values["signupMode"])}
+            required
+            style={fieldStyle("signupMode")}
+          >
             {SIGNUP_MODES.map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -109,14 +148,20 @@ export function RaidHeader({ raid, canManage }: { raid: Raid; canManage: boolean
             name="capacity"
             type="number"
             min={1}
-            defaultValue={raid.capacity}
+            value={values.capacity}
+            onChange={(e) => setField("capacity", e.target.value)}
             required
             style={fieldStyle("capacity")}
           />
         </label>
         <label>
           Poznámka
-          <textarea name="notes" rows={2} defaultValue={raid.notes ?? ""} />
+          <textarea
+            name="notes"
+            rows={2}
+            value={values.notes}
+            onChange={(e) => setField("notes", e.target.value)}
+          />
         </label>
 
         {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
@@ -145,7 +190,7 @@ export function RaidHeader({ raid, canManage }: { raid: Raid; canManage: boolean
       {canManage && (
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           {isRaidEditable(raid.status) && (
-            <button onClick={() => setEditing(true)} disabled={isPending}>
+            <button onClick={openEditing} disabled={isPending}>
               Upravit raid
             </button>
           )}

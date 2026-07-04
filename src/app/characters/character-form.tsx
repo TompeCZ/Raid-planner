@@ -1,13 +1,27 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import type { Character } from "@/db/schema";
-import { restoreFormValues } from "@/lib/form-restore";
 import { createCharacter, updateCharacter } from "./actions";
 import { WOW_CLASSES } from "./constants";
 
 const FACTIONS = ["ALLIANCE", "HORDE"] as const;
 const ROLES = ["TANK", "HEALER", "MELEE", "RANGED"] as const;
+
+function deriveValues(character?: Character) {
+  return {
+    name: character?.name ?? "",
+    realm: character?.realm ?? "",
+    faction: character?.faction ?? ("ALLIANCE" as (typeof FACTIONS)[number]),
+    class: character?.class ?? WOW_CLASSES[0],
+    role: character?.role ?? ("TANK" as (typeof ROLES)[number]),
+    isRaidReady: character?.isRaidReady ?? false,
+    externalUrl: character?.externalUrl ?? "",
+    note: character?.note ?? "",
+  };
+}
+
+type Values = ReturnType<typeof deriveValues>;
 
 export function CharacterForm({
   character,
@@ -16,9 +30,15 @@ export function CharacterForm({
   character?: Character;
   onDone?: () => void;
 }) {
-  const formRef = useRef<HTMLFormElement>(null);
+  // CharacterRow renderuje tuhle komponentu jen podmíněně (`if (editing) return <CharacterForm .../>`),
+  // takže při každém otevření editace jde o čerstvý mount — initializer stačí spustit jednou.
+  const [values, setValues] = useState<Values>(() => deriveValues(character));
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  function setField<K extends keyof Values>(key: K, value: Values[K]) {
+    setValues((v) => ({ ...v, [key]: value }));
+  }
 
   function handleSubmit(formData: FormData) {
     setError(null);
@@ -28,33 +48,38 @@ export function CharacterForm({
           await updateCharacter(character.id, formData);
         } else {
           await createCharacter(formData);
-          formRef.current?.reset();
+          setValues(deriveValues());
         }
         onDone?.();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Něco se pokazilo.");
-        restoreFormValues(formRef.current, formData);
       }
     });
   }
 
   return (
-    <form
-      ref={formRef}
-      action={handleSubmit}
-      style={{ display: "grid", gap: "0.6rem", maxWidth: 420 }}
-    >
+    <form action={handleSubmit} style={{ display: "grid", gap: "0.6rem", maxWidth: 420 }}>
       <label>
         Jméno
-        <input name="name" defaultValue={character?.name} required />
+        <input name="name" value={values.name} onChange={(e) => setField("name", e.target.value)} required />
       </label>
       <label>
         Realm
-        <input name="realm" defaultValue={character?.realm} required />
+        <input
+          name="realm"
+          value={values.realm}
+          onChange={(e) => setField("realm", e.target.value)}
+          required
+        />
       </label>
       <label>
         Faction
-        <select name="faction" defaultValue={character?.faction ?? "ALLIANCE"} required>
+        <select
+          name="faction"
+          value={values.faction}
+          onChange={(e) => setField("faction", e.target.value as Values["faction"])}
+          required
+        >
           {FACTIONS.map((f) => (
             <option key={f} value={f}>
               {f}
@@ -64,7 +89,12 @@ export function CharacterForm({
       </label>
       <label>
         Class
-        <select name="class" defaultValue={character?.class ?? WOW_CLASSES[0]} required>
+        <select
+          name="class"
+          value={values.class}
+          onChange={(e) => setField("class", e.target.value)}
+          required
+        >
           {WOW_CLASSES.map((c) => (
             <option key={c} value={c}>
               {c}
@@ -74,7 +104,12 @@ export function CharacterForm({
       </label>
       <label>
         Role
-        <select name="role" defaultValue={character?.role ?? "TANK"} required>
+        <select
+          name="role"
+          value={values.role}
+          onChange={(e) => setField("role", e.target.value as Values["role"])}
+          required
+        >
           {ROLES.map((r) => (
             <option key={r} value={r}>
               {r}
@@ -86,17 +121,28 @@ export function CharacterForm({
         <input
           type="checkbox"
           name="isRaidReady"
-          defaultChecked={character?.isRaidReady ?? false}
+          checked={values.isRaidReady}
+          onChange={(e) => setField("isRaidReady", e.target.checked)}
         />{" "}
         Raid ready
       </label>
       <label>
         Odkaz (armory/logs)
-        <input name="externalUrl" type="url" defaultValue={character?.externalUrl ?? ""} />
+        <input
+          name="externalUrl"
+          type="url"
+          value={values.externalUrl}
+          onChange={(e) => setField("externalUrl", e.target.value)}
+        />
       </label>
       <label>
         Poznámka
-        <textarea name="note" defaultValue={character?.note ?? ""} rows={2} />
+        <textarea
+          name="note"
+          rows={2}
+          value={values.note}
+          onChange={(e) => setField("note", e.target.value)}
+        />
       </label>
 
       {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}

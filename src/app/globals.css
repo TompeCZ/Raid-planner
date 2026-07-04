@@ -29,6 +29,53 @@ main.wide {
   padding: 2rem;
 }
 
+/* Setup builder: tří-sloupcový layout (roster+bench+absence | mřížka | poznámky+external).
+   Na úzkých šířkách se sloupce naskládají pod sebe v pořadí mřížka -> roster -> extra,
+   protože mřížka je to hlavní, co chce RL na malém displeji vidět první. */
+.setup-columns {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(360px, 2fr) minmax(260px, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+.setup-columns > .setup-col-roster {
+  order: 1;
+}
+.setup-columns > .setup-col-grid {
+  order: 2;
+}
+.setup-columns > .setup-col-extra {
+  order: 3;
+}
+
+@media (max-width: 1100px) {
+  .setup-columns {
+    grid-template-columns: 1fr;
+  }
+  .setup-columns > .setup-col-grid {
+    order: 1;
+  }
+  .setup-columns > .setup-col-roster {
+    order: 2;
+  }
+  .setup-columns > .setup-col-extra {
+    order: 3;
+  }
+}
+
+/* Mřížka raidu: 8 skupin ve formátu 4 sloupce x 2 řady; na úzkých šířkách 2 sloupce x 4 řady. */
+.setup-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 700px) {
+  .setup-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 button {
   font: inherit;
   cursor: pointer;

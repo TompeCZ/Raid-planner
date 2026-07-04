@@ -5,6 +5,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { character, faction, charRole } from "@/db/schema";
 import { getCurrentAppUser } from "@/lib/auth";
+import { friendlyMainError } from "./main-error";
 
 const FACTIONS = faction.enumValues;
 const ROLES = charRole.enumValues;
@@ -99,5 +100,26 @@ export async function softDeleteCharacter(characterId: string) {
     .update(character)
     .set({ deletedAt: new Date() })
     .where(eq(character.id, characterId));
+  revalidatePath("/characters");
+}
+
+/** Nastaví postavu jako hlavní. NEODZNAČUJE automaticky předchozí hlavní. */
+export async function setMain(characterId: string) {
+  const appUser = await requireAppUser();
+  await requireOwnCharacter(characterId, appUser.id);
+
+  try {
+    await db.update(character).set({ isMain: true }).where(eq(character.id, characterId));
+  } catch (err) {
+    throw friendlyMainError(err);
+  }
+  revalidatePath("/characters");
+}
+
+export async function unsetMain(characterId: string) {
+  const appUser = await requireAppUser();
+  await requireOwnCharacter(characterId, appUser.id);
+
+  await db.update(character).set({ isMain: false }).where(eq(character.id, characterId));
   revalidatePath("/characters");
 }

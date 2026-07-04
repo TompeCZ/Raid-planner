@@ -90,6 +90,11 @@ export const character = pgTable(
     class: text("class").notNull(),
     role: charRole("role").notNull(),
     isRaidReady: boolean("is_raid_ready").notNull().default(false),
+    // Hlavní postava hráče — max 1 na hráče, vynuceno parciálním unique
+    // indexem `character_one_main_per_user` (WHERE is_main AND deleted_at IS
+    // NULL), doplněným ručně do migrace (Drizzle partial unique přes bool +
+    // NULL check nevyjádří).
+    isMain: boolean("is_main").notNull().default(false),
     externalUrl: text("external_url"),
     note: text("note"),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

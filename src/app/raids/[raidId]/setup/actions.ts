@@ -16,6 +16,8 @@ import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { findConflictedAssignments } from "@/lib/absence-conflicts";
 import { findCharactersConfirmedElsewhere, type BusyElsewhere } from "@/lib/character-availability";
+import { resolveDisplayName } from "@/lib/display-name";
+import { getMainCharacterNamesByUserId } from "@/lib/main-character";
 import { isRaidEditable } from "../../raid-status";
 import { assertValidGroupNo, assertValidSlotNo } from "./setup-validation";
 
@@ -154,6 +156,17 @@ export async function getSetupData(raidId: string): Promise<SetupData> {
     .filter((r) => !rosterCharacterIds.has(r.characterId))
     .map((r) => ({ ...r, signupStatus: null, inSignupPool: false }));
 
+  // Zobrazovací jméno hráče ostatním = jeho hlavní postava, jinak Discord displayName.
+  const mainNames = await getMainCharacterNamesByUserId([
+    ...new Set([...roster, ...otherCharacters].map((c) => c.userId)),
+  ]);
+  const resolveRosterCharacter = (r: RosterCharacter): RosterCharacter => ({
+    ...r,
+    displayName: resolveDisplayName({ displayName: r.displayName }, mainNames.get(r.userId) ?? null),
+  });
+  const resolvedRoster = roster.map(resolveRosterCharacter);
+  const resolvedOtherCharacters = otherCharacters.map(resolveRosterCharacter);
+
   const conflicts = await findConflictedAssignments({ raidId });
 
   const allCharacterIds = [...new Set([...roster, ...otherCharacters].map((c) => c.characterId))];
@@ -166,8 +179,8 @@ export async function getSetupData(raidId: string): Promise<SetupData> {
 
   return {
     raid: raidRow,
-    roster,
-    otherCharacters,
+    roster: resolvedRoster,
+    otherCharacters: resolvedOtherCharacters,
     assignments: assignmentRows,
     conflictedAssignmentIds: conflicts.map((c) => c.assignmentId),
     busyElsewhere,

@@ -108,9 +108,19 @@ nevygeneruje) — porovnej s tabulkou „Vynucení nad rámec FK" v `docs/er-dia
 Soft delete je napříč schématem jednotný: `deletedAt timestamptz NULL`, nikdy boolean `active` flag,
 a u `user` nikdy hard delete.
 
-`assignment.groupNo` je CHECK omezený na `1..8` (40man: 8 skupin × 5 slotů). Kapacitu 5/skupinu CHECK
-nehlídá — to je aplikační pravidlo v `assignToGroup()` (`src/app/raids/[raidId]/setup/actions.ts`),
-protože „slot" uvnitř skupiny nemá vlastní sloupec/identitu, jen pořadí v UI.
+`assignment.groupNo` je CHECK omezený na `1..8` (40man: 8 skupin × 5 slotů), `assignment.slotNo` na
+`1..5` (přesná pozice v rámci skupiny — kliknutím na 3. slot tam postava zůstane, i když 1.–2. jsou
+prázdné). Uniqueness `(raidId, groupNo, slotNo)` se nevynucuje v DB, jen aplikačně v `assignToGroup()`
+(`src/app/raids/[raidId]/setup/actions.ts`) — obsazený slot vrátí chybu, swap dvou umístěných postav
+řeší `swapAssignments()` v transakci.
+
+`character.isMain` — max 1 hlavní postava na hráče, vynuceno partial unique indexem
+`character_one_main_per_user` (`ON character (user_id) WHERE is_main AND deleted_at IS NULL`),
+doplněným ručně do migrace stejně jako ostatní partial/exclusion constrainty (Drizzle partial unique
+přes bool+NULL podmínku sám nevygeneruje). `setMain()`/`unsetMain()` (`src/app/characters/actions.ts`)
+NEODZNAČUJÍ automaticky předchozí hlavní — konflikt spadne na unique indexu (Postgres `23505`),
+zachyceno a přeloženo na českou hlášku v `friendlyMainError()` (`src/app/characters/main-error.ts`,
+odděleno od `actions.ts` kvůli testovatelnosti bez tažení `server-only` řetězce přes `@/lib/auth`).
 
 ### Absence-konflikt (reverse flow) — odvozený dotaz, ne uložený flag
 
@@ -136,6 +146,22 @@ Použití stejné funkce na třech místech:
   absence nespamovala staré, už známé konflikty). Webhook = `raid.discordWebhookOverride ??
   raidTemplate.discordWebhookUrl`; když žádný není nastavený, `sendDiscordWebhook()` (`src/lib/
   discord-webhook.ts`) mlčky nic neudělá — nikdy nevyhazuje.
+
+### Odvozené zobrazovací jméno hráče
+
+`src/lib/display-name.ts#resolveDisplayName(user, mainCharacterName)` — všude, kde se hráč zobrazuje
+OSTATNÍM (roster/bench v setup builderu, seznam přihlášených na detailu raidu), se místo Discord
+`displayName` použije jméno hráčovy hlavní (nesmazané) postavy, pokud nějakou má. `mainCharacterName`
+vždy dodává `src/lib/main-character.ts#getMainCharacterNamesByUserId()` (JOIN filtrovaný na
+`isMain AND deletedAt IS NULL`), nikdy se nekontroluje uvnitř `resolveDisplayName` samotné — proto je
+to čistá, snadno testovatelná funkce. Vlastní pohled hráče na sebe (`/characters`, `/absences`) fallback
+neřeší, tam zůstává Discord jméno.
+
+### Setup builder: cross-raid nedostupnost a hlavní postava
+
+- `src/lib/character-availability.ts#findCharactersConfirmedElsewhere()` proaktivně označí v rosteru
+  postavy CONFIRMED v jiném časově překrývajícím se raidu (dřív, než na to narazí exclusion constraint
+  invariantu 1) — BENCH se nepočítá, stejná výjimka jako u samotného constraintu.
 
 ### Struktura aplikace
 

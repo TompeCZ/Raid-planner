@@ -6,6 +6,8 @@ import { db } from "@/db/client";
 import { raid, signup, signupCharacter, character, signupStatus, user } from "@/db/schema";
 import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { resolveDisplayName } from "@/lib/display-name";
+import { getMainCharacterNamesByUserId } from "@/lib/main-character";
 import { readRaidForm } from "../raid-validation";
 import { canTransitionRaidStatus, isRaidEditable } from "../raid-status";
 
@@ -67,6 +69,7 @@ export async function getRaidPageData(raidId: string) {
     .select({
       signupId: signup.id,
       status: signup.status,
+      userId: signup.userId,
       displayName: user.displayName,
       characterName: character.name,
     })
@@ -80,12 +83,19 @@ export async function getRaidPageData(raidId: string) {
   // Řádky jsou po JOINu 1:N (signup:postavy) — sloučit zpět na 1 řádek na signup.
   const rosterBySignupId = new Map<
     string,
-    { signupId: string; status: (typeof SIGNUP_STATUSES)[number]; displayName: string; characterNames: string[] }
+    {
+      signupId: string;
+      status: (typeof SIGNUP_STATUSES)[number];
+      userId: string;
+      displayName: string;
+      characterNames: string[];
+    }
   >();
   for (const row of rosterRows) {
     const entry = rosterBySignupId.get(row.signupId) ?? {
       signupId: row.signupId,
       status: row.status,
+      userId: row.userId,
       displayName: row.displayName,
       characterNames: [],
     };
@@ -93,12 +103,20 @@ export async function getRaidPageData(raidId: string) {
     rosterBySignupId.set(row.signupId, entry);
   }
 
+  // Zobrazovací jméno hráče ostatním = jeho hlavní postava, jinak Discord displayName.
+  const rosterEntries = Array.from(rosterBySignupId.values());
+  const mainNames = await getMainCharacterNamesByUserId(rosterEntries.map((r) => r.userId));
+  const roster = rosterEntries.map((r) => ({
+    ...r,
+    displayName: resolveDisplayName({ displayName: r.displayName }, mainNames.get(r.userId) ?? null),
+  }));
+
   return {
     raid: raidRow,
     myCharacters,
     mySignup: mySignup ?? null,
     mySignupCharacterIds,
-    roster: Array.from(rosterBySignupId.values()),
+    roster,
   };
 }
 

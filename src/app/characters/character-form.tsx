@@ -154,7 +154,7 @@ export function CharacterForm({
             disabled={mainPending}
             onChange={(e) => handleToggleMain(e.target.checked)}
           />
-          Hlavní
+          Main
         </label>
       )}
       {mainError && <p style={{ color: "#ff6b6b" }}>{mainError}</p>}

@@ -40,7 +40,7 @@ export function CharacterRow({ character }: { character: Character }) {
               borderRadius: 4,
             }}
           >
-            hlavní
+            main
           </span>
         )}{" "}
         — {character.realm} ({character.faction})

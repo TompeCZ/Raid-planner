@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import type { CSSProperties } from "react";
 import type { Assignment } from "@/db/schema";
+import type { BusyElsewhere } from "@/lib/character-availability";
 import {
   assignToGroup,
   benchCharacter,
@@ -19,12 +20,17 @@ const GROUPS = Array.from({ length: GROUP_COUNT }, (_, i) => i + 1);
 const SLOTS = Array.from({ length: SLOTS_PER_GROUP }, (_, i) => i + 1);
 const ALL_ROLES: CharRole[] = ["TANK", "HEALER", "MELEE", "RANGED"];
 
+function formatTimeRange(startsAt: Date, endsAt: Date): string {
+  return `${startsAt.toLocaleString("cs-CZ")} – ${endsAt.toLocaleString("cs-CZ")}`;
+}
+
 type Props = {
   raidId: string;
   roster: RosterCharacter[];
   otherCharacters: RosterCharacter[];
   assignments: Assignment[];
   conflictedAssignmentIds: string[];
+  busyElsewhere: BusyElsewhere[];
   initialNotes: string | null;
   readOnly: boolean;
 };
@@ -140,6 +146,7 @@ export function SetupBoard({
   otherCharacters,
   assignments,
   conflictedAssignmentIds,
+  busyElsewhere,
   initialNotes,
   readOnly,
 }: Props) {
@@ -167,6 +174,12 @@ export function SetupBoard({
     for (const a of assignments) map.set(a.characterId, a);
     return map;
   }, [assignments]);
+
+  const busyElsewhereByCharacterId = useMemo(() => {
+    const map = new Map<string, BusyElsewhere>();
+    for (const b of busyElsewhere) map.set(b.characterId, b);
+    return map;
+  }, [busyElsewhere]);
 
   /** Kterou postavu má který hráč v tomto raidu obsazenou — včetně toho, co je právě VYBRANÉ
    * (ne jen už uložené), ať ostatní alty hned zešednou i před samotným přiřazením. */
@@ -308,17 +321,25 @@ export function SetupBoard({
 
   function renderRosterEntry(c: RosterCharacter, siblingsMap: Map<string, RosterCharacter[]>) {
     const isSelected = selected === c.characterId;
+    const busy = busyElsewhereByCharacterId.get(c.characterId);
     // Zešedne i postava, která už JE přiřazená/benchnutá (ne jen její sourozenci) —
-    // dál se s ní manipuluje přes kartu v mřížce/na benchi, ne přes roster. Výjimka:
-    // dokud je právě "vybraná" (probíhá její umístění), zůstává klikatelná kvůli deselectu.
+    // dál se s ní manipuluje přes kartu v mřížce/na benchi, ne přes roster. Stejně
+    // tak postava CONFIRMED v jiném časově překrývajícím se raidu (nedostupná, i
+    // kdyby tenhle raid teprve plánoval) — DB exclusion constraint by ji stejně
+    // odmítl. Výjimka: dokud je právě "vybraná", zůstává klikatelná kvůli deselectu.
     const reservedBy = reservedCharacterIdByUserId.get(c.userId);
-    const disabled = reservedBy !== undefined && !isSelected;
+    const disabled = (reservedBy !== undefined || Boolean(busy)) && !isSelected;
     const currentAssignment = assignmentByCharacterId.get(c.characterId);
     return (
       <div
         key={c.characterId}
         onClick={() => handleSelectCharacter(c.characterId, disabled)}
         style={rosterEntryStyle({ disabled, isSelected, readOnly })}
+        title={
+          busy
+            ? `Obsazen v ${busy.raidInstance} (${formatTimeRange(busy.startsAt, busy.endsAt)})`
+            : undefined
+        }
       >
         <div>
           <strong>{c.characterName}</strong>{" "}
@@ -336,6 +357,11 @@ export function SetupBoard({
             </span>
           )}
         </div>
+        {busy && !currentAssignment && (
+          <div style={{ fontSize: "0.75rem", color: "#e8b339" }}>
+            ⛔ obsazen v {busy.raidInstance}
+          </div>
+        )}
       </div>
     );
   }

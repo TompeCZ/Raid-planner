@@ -15,6 +15,7 @@ import {
 import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { findConflictedAssignments } from "@/lib/absence-conflicts";
+import { findCharactersConfirmedElsewhere, type BusyElsewhere } from "@/lib/character-availability";
 import { isRaidEditable } from "../../raid-status";
 import { assertValidGroupNo, assertValidSlotNo } from "./setup-validation";
 
@@ -78,6 +79,7 @@ export type SetupData = {
   otherCharacters: RosterCharacter[];
   assignments: Assignment[];
   conflictedAssignmentIds: string[];
+  busyElsewhere: BusyElsewhere[];
 };
 
 const CHARACTER_SELECT_SHAPE = {
@@ -154,12 +156,21 @@ export async function getSetupData(raidId: string): Promise<SetupData> {
 
   const conflicts = await findConflictedAssignments({ raidId });
 
+  const allCharacterIds = [...new Set([...roster, ...otherCharacters].map((c) => c.characterId))];
+  const busyElsewhere = await findCharactersConfirmedElsewhere(
+    raidId,
+    raidRow.startsAt,
+    raidRow.endsAt,
+    allCharacterIds,
+  );
+
   return {
     raid: raidRow,
     roster,
     otherCharacters,
     assignments: assignmentRows,
     conflictedAssignmentIds: conflicts.map((c) => c.assignmentId),
+    busyElsewhere,
   };
 }
 

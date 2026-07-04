@@ -14,7 +14,7 @@ export default async function SetupPage({ params }: { params: Promise<{ raidId: 
   const data = await getSetupData(raidId).catch(() => null);
   if (!data) notFound();
 
-  const { raid, roster, otherCharacters, assignments, conflictedAssignmentIds } = data;
+  const { raid, roster, otherCharacters, assignments, conflictedAssignmentIds, busyElsewhere } = data;
 
   return (
     <main className="wide">
@@ -33,6 +33,7 @@ export default async function SetupPage({ params }: { params: Promise<{ raidId: 
         otherCharacters={otherCharacters}
         assignments={assignments}
         conflictedAssignmentIds={conflictedAssignmentIds}
+        busyElsewhere={busyElsewhere}
         initialNotes={raid.notes}
         readOnly={!isRaidEditable(raid.status)}
       />

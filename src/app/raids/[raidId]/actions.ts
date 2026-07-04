@@ -5,6 +5,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { raid, signup, signupCharacter, character, signupStatus, user } from "@/db/schema";
 import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 import { readRaidForm } from "../raid-validation";
 import { canTransitionRaidStatus, isRaidEditable } from "../raid-status";
 
@@ -117,7 +118,7 @@ export async function updateRaid(raidId: string, formData: FormData) {
 
 /** Ruční přechod stavu raidu (LOCKED/DONE/CANCELLED/znovu OPEN) — jen RAID_LEADER/ADMIN. */
 export async function setRaidStatus(raidId: string, status: RaidStatus) {
-  await requireRaidLeader();
+  const appUser = await requireRaidLeader();
   const raidRow = await requireRaid(raidId);
 
   if (!canTransitionRaidStatus(raidRow.status, status)) {
@@ -125,6 +126,13 @@ export async function setRaidStatus(raidId: string, status: RaidStatus) {
   }
 
   await db.update(raid).set({ status }).where(eq(raid.id, raidId));
+  await logAudit({
+    actorId: appUser.id,
+    action: "raid_status_changed",
+    targetType: "raid",
+    targetId: raidId,
+    description: `${raidRow.instance}: ${raidRow.status} -> ${status}`,
+  });
   revalidatePath("/raids");
   revalidatePath(`/raids/${raidId}`);
 }

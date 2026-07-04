@@ -76,6 +76,41 @@ main.wide {
   }
 }
 
+/* Kalendář: raid marker v den-buňce — na širokém displeji pill se jménem
+   instance, na úzkém jen barevná tečka (mobile-first komfort na malém prstu). */
+.cal-raid-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  background: #22344a;
+  border-radius: 10px;
+  padding: 1px 6px;
+  max-width: 100%;
+}
+.cal-raid-marker .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ea1ff;
+  flex-shrink: 0;
+}
+.cal-raid-marker .text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .cal-raid-marker {
+    background: none;
+    padding: 0;
+  }
+  .cal-raid-marker .text {
+    display: none;
+  }
+}
+
 button {
   font: inherit;
   cursor: pointer;

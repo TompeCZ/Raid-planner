@@ -139,6 +139,8 @@ export const raidTemplate = pgTable(
   ],
 );
 
+export type RaidTemplate = typeof raidTemplate.$inferSelect;
+
 /* -------------------------------------------------------------------------- */
 /* Raid  (partial UNIQUE(template_id, starts_at) = idempotence generování)    */
 /* -------------------------------------------------------------------------- */
@@ -240,13 +242,17 @@ export const assignment = pgTable(
       foreignColumns: [character.id, character.userId],
     }).onDelete("restrict"),
     unique("assignment_raid_character_uq").on(t.raidId, t.characterId),
-    check("assignment_group_no_check", sql`${t.groupNo} BETWEEN 1 AND 5`),
+    // 40man: 8 skupin x 5 slotů (kapacita 5/skupinu se hlídá aplikačně, ne CHECKem).
+    check("assignment_group_no_check", sql`${t.groupNo} BETWEEN 1 AND 8`),
     index("assignment_raid_id_idx").on(t.raidId),
     index("assignment_user_id_idx").on(t.userId),
     // POZN.: EXCLUDE USING gist (character_id WITH =, tstzrange(starts_at,ends_at)
     // WITH &&) WHERE status='CONFIRMED' — doplněno ručně v drizzle/0000_init.sql
   ],
 );
+
+export type Assignment = typeof assignment.$inferSelect;
+export type NewAssignment = typeof assignment.$inferInsert;
 
 /* -------------------------------------------------------------------------- */
 /* Absence  (DATE rozsah, to_date inkluzivní, rušitelná)                      */
@@ -268,6 +274,9 @@ export const absence = pgTable(
     index("absence_user_id_idx").on(t.userId),
   ],
 );
+
+export type Absence = typeof absence.$inferSelect;
+export type NewAbsence = typeof absence.$inferInsert;
 
 /* -------------------------------------------------------------------------- */
 /* AttendanceRecord  (ground-truth docházky; 1:1 na assignment)               */
@@ -335,3 +344,5 @@ export const auditLog = pgTable(
   },
   (t) => [index("audit_log_target_idx").on(t.targetType, t.targetId)],
 );
+
+export type NewAuditLog = typeof auditLog.$inferInsert;

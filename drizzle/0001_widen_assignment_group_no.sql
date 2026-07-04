@@ -1,0 +1,2 @@
+ALTER TABLE "assignment" DROP CONSTRAINT "assignment_group_no_check";--> statement-breakpoint
+ALTER TABLE "assignment" ADD CONSTRAINT "assignment_group_no_check" CHECK ("assignment"."group_no" BETWEEN 1 AND 8);

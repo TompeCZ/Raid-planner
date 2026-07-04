@@ -37,10 +37,13 @@ npm test                  # unit testy (Vitest, `vitest run`)
 npx tsc --noEmit           # typecheck (samostatný lint skript není definován)
 ```
 
-Unit testy (Vitest) žijí vedle testovaného kódu jako `*.test.ts` — čistě validace/přechody stavů
-(`raid-validation`, `raid-status`, `absence-validation`, `setup-validation`), žádné nesahají na DB ani
-na Supabase. Absence-conflict detekce a setup builder actions (DB dotazy, upserty, Discord webhook)
-testy zatím nemají — vyžadovalo by to testovací DB nebo mockování Postgres.
+Unit testy (Vitest) žijí vedle testovaného kódu jako `*.test.ts` — čistě validace/přechody
+stavů/serializace (`raid-validation`, `raid-status`, `absence-validation`, `setup-validation`,
+`local-date`, `month-grid`, `ical`), žádné nesahají na DB ani na Supabase. Pokud testovaná funkce žije
+v souboru, který (třeba tranzitivně přes `@/lib/auth`) importuje `server-only`, vyčleň ji do
+samostatného čistého modulu (viz `characters/main-error.ts`) — jinak test spadne na runtime throw z
+`server-only`, ne na assert. Absence-conflict detekce a setup builder actions (DB dotazy, upserty,
+Discord webhook) testy zatím nemají — vyžadovalo by to testovací DB nebo mockování Postgres.
 
 Vyžaduje `.env` (viz `.env.example`) s `DATABASE_URL` (Supabase Postgres), `NEXT_PUBLIC_SUPABASE_URL`,
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` a `NEXT_PUBLIC_SITE_URL`. Discord OAuth client id/secret se nastavují
@@ -63,8 +66,8 @@ naplánováno, není postaveno).
 - Middleware (`middleware.ts` → `updateSession`) obnovuje Supabase session cookie při každém requestu;
   musí volat `supabase.auth.getUser()` (ne `getSession()`), jinak se token neobnoví.
 - OAuth callback (`src/app/auth/callback/route.ts`) vymění code za session, hned zavolá
-  `getCurrentAppUser()` (aby se app user materializoval ihned) a přesměruje na `next` (default
-  `/characters`). Rozlišení redirect base záměrně ignoruje `NEXT_PUBLIC_SITE_URL`, pokud obsahuje
+  `getCurrentAppUser()` (aby se app user materializoval ihned) a přesměruje na `next` (default `/` —
+  dashboard). Rozlišení redirect base záměrně ignoruje `NEXT_PUBLIC_SITE_URL`, pokud obsahuje
   `0.0.0.0` (typicky omylem zkopírovaná dev hodnota), a spadne zpět na `origin` z requestu.
 - Přístup k datům jde vždy přes Drizzle ze server vrstvy Next.js (Server Components, Server Actions,
   Route Handlers) — nikdy přímo z prohlížeče. Supabase Row Level Security je zamýšlené jen jako
@@ -159,9 +162,42 @@ neřeší, tam zůstává Discord jméno.
 
 ### Setup builder: cross-raid nedostupnost a hlavní postava
 
-- `src/lib/character-availability.ts#findCharactersConfirmedElsewhere()` proaktivně označí v rosteru
+- `src/lib/character-availability.ts#findUsersConfirmedElsewhere()` proaktivně označí v rosteru
   postavy CONFIRMED v jiném časově překrývajícím se raidu (dřív, než na to narazí exclusion constraint
-  invariantu 1) — BENCH se nepočítá, stejná výjimka jako u samotného constraintu.
+  invariantu 1) — BENCH se nepočítá, stejná výjimka jako u samotného constraintu. Klíčováno na
+  **hráče** (`userId`), ne na konkrétní postavu: za jednoho hráče nejde jít dvěma postavami současně,
+  takže jakmile má CONFIRMED postavu jinde, zešednou v rosteru VŠECHNY jeho postavy, ne jen ta jedna
+  konkrétní, přes kterou se to zjistilo.
+
+### Kalendář, dashboard a iCal odběr
+
+- `/` (dashboard, `src/app/page.tsx` + `src/app/actions.ts#getDashboardRaids`) — rozcestník na
+  ostatní vertikály + read-only 7denní přehled (dnes..+6), bucketovaný podle **lokálního** dne
+  (Europe/Prague), ne UTC. Absence se sem záměrně nedávají (drženo lehké) — žijí v `/calendar`.
+  Přesměrování po loginu/OAuth (`login/page.tsx`, `auth/callback/route.ts`) míří sem, ne na
+  `/characters`.
+- `src/lib/local-date.ts#toPragueDateKey()`/`pragueDateKeyPlusDays()` — jediné správné místo pro
+  převod instantu (UTC `Date`) na kalendářní den. Přes `Intl.DateTimeFormat` s `timeZone:
+  "Europe/Prague"`, žádná ruční offset aritmetika — řeší DST správně. Používej VŽDY místo
+  `date.toISOString().slice(0,10)`, jinak večerní raid může spadnout na špatný (dřívější/pozdější)
+  den. `pragueDateKeyPlusDays` kotví na poledni UTC, aby sčítání dní nesklouzlo přes DST přechod.
+- `/calendar` (`src/app/calendar/`) — měsíční mřížka (`month-grid.ts#buildMonthGrid`, čistá funkce,
+  týden Po–Ne, přesah z okolních měsíců). Data (`actions.ts#getCalendarMonth`): raidy mimo
+  DRAFT/CANCELLED bucketované podle lokálního dne jako dashboard; absence jsou čisté `DATE` rozsahy
+  (`fromDate`..`toDate`), žádné TZ řešení — jen řetězcové porovnání `absencesForDay()`. Klik/hover na
+  den ukáže pod mřížkou panel s absencemi toho dne — jméno přes `resolveDisplayName`, barva podle
+  `character.class` (`characters/constants.ts#CLASS_COLORS`, standardní WoW paleta; Priest je bílý,
+  proto má chip vždy jednotný neutrální rámeček, ne barevný podle třídy). Responzivita raid-markeru
+  (pill se jménem na širokém / jen tečka na úzkém) je čistě CSS media query (`.cal-raid-marker` v
+  `globals.css`), ne JS breakpoint detekce.
+- `/api/calendar/[token]` (`route.ts`) — veřejný (bez loginu) iCal feed, ověřený přes
+  `user.calendar_token` (nullable, plný `UNIQUE`, migrace 0004). Obsahuje JEN raidy (žádné absence),
+  rolující okno dnes−30 dní..budoucnost, mimo DRAFT/CANCELLED. Generování/regenerace
+  tokenu (`src/app/actions.ts#generateCalendarToken`) používá `sql\`gen_random_uuid()\`` přímo v
+  UPDATE (stejné rozšíření `pgcrypto` jako `character.id` apod.) — přegenerování okamžitě zneplatní
+  starou odběrovou URL. `src/lib/ical.ts` je čistá VCALENDAR/VEVENT serializace (RFC5545 escaping
+  `\`/`;`/`,`/newline, `UID` = `raid.id`, časy vždy `...Z` v UTC) oddělená od route handleru kvůli
+  testovatelnosti bez DB.
 
 ### Struktura aplikace
 
@@ -183,6 +219,8 @@ Aktuálně implementované vertikály:
 - `raids/[raidId]/setup` — setup builder: mřížka 8 skupin × 5 slotů (`CONFIRMED`) + bench (`BENCH`),
   click-click přiřazování (bez drag-and-drop — to je BACKLOG), 1 hráč = max 1 postava v rámci raidu
   (aplikační pravidlo, ne DB constraint), vizuální konflikt při absenci.
+- `/` (dashboard) + `/calendar` + `/api/calendar/[token]` — read-only přehled a měsíční kalendář
+  (raidy + absence), iCal odběr do Google/Apple kalendáře. Viz „Kalendář, dashboard a iCal odběr" výše.
 
 Create/update/cancel/setup raidu je omezené na role `RAID_LEADER`/`ADMIN` — predikát `canManageRaids()`
 v `src/lib/auth.ts`, vynucený v server actions přes lokální `requireRaidLeader()` a zrcadlený v UI

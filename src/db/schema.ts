@@ -72,6 +72,10 @@ export const user = pgTable("user", {
     .notNull()
     .defaultNow(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Token pro iCal odběr (/api/calendar/[token]). Nullable — vygeneruje se až
+  // na vyžádání z dashboardu; "vygenerovat znovu" nastaví nový uuid, čímž
+  // zneplatní starou URL (viz src/app/calendar-feed-actions.ts).
+  calendarToken: uuid("calendar_token").unique(),
 });
 
 /* -------------------------------------------------------------------------- */

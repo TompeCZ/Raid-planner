@@ -15,6 +15,13 @@
       "when": 1783189570120,
       "tag": "0001_widen_assignment_group_no",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783196063966,
+      "tag": "0002_add_assignment_slot_no",
+      "breakpoints": true
     }
   ]
 }

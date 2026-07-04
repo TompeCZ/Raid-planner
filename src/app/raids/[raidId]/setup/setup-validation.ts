@@ -8,3 +8,9 @@ export function assertValidGroupNo(groupNo: number): void {
     throw new Error(`Skupina musí být 1–${GROUP_COUNT}.`);
   }
 }
+
+export function assertValidSlotNo(slotNo: number): void {
+  if (!Number.isInteger(slotNo) || slotNo < 1 || slotNo > SLOTS_PER_GROUP) {
+    throw new Error(`Slot musí být 1–${SLOTS_PER_GROUP}.`);
+  }
+}

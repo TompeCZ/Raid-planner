@@ -1,21 +1,45 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import type { CSSProperties } from "react";
 import type { Assignment } from "@/db/schema";
-import { assignToGroup, benchCharacter, removeAssignment, type RosterCharacter } from "./actions";
+import {
+  assignToGroup,
+  benchCharacter,
+  removeAssignment,
+  setAssignmentRole,
+  swapAssignments,
+  updateSetupNotes,
+  type CharRole,
+  type RosterCharacter,
+} from "./actions";
 import { GROUP_COUNT, SLOTS_PER_GROUP } from "./setup-validation";
 
 const GROUPS = Array.from({ length: GROUP_COUNT }, (_, i) => i + 1);
+const SLOTS = Array.from({ length: SLOTS_PER_GROUP }, (_, i) => i + 1);
+const ALL_ROLES: CharRole[] = ["TANK", "HEALER", "MELEE", "RANGED"];
 
 type Props = {
   raidId: string;
   roster: RosterCharacter[];
+  otherCharacters: RosterCharacter[];
   assignments: Assignment[];
   conflictedAssignmentIds: string[];
+  initialNotes: string | null;
   readOnly: boolean;
 };
 
-/** Malý tag na hráče — hover/focus ukáže popup s jeho ostatními nabídnutými postavami. */
+function groupByUser(list: RosterCharacter[]): Map<string, RosterCharacter[]> {
+  const map = new Map<string, RosterCharacter[]>();
+  for (const c of list) {
+    const bucket = map.get(c.userId) ?? [];
+    bucket.push(c);
+    map.set(c.userId, bucket);
+  }
+  return map;
+}
+
+/** Malý tag na hráče — hover/focus ukáže popup s jeho ostatními postavami v tomto seznamu. */
 function PlayerTag({
   displayName,
   siblings,
@@ -43,7 +67,7 @@ function PlayerTag({
       >
         {displayName}
       </span>
-      {open && (
+      {open && siblings.length > 0 && (
         <div
           style={{
             position: "absolute",
@@ -59,7 +83,6 @@ function PlayerTag({
           }}
         >
           <div style={{ fontWeight: "bold", marginBottom: "0.25rem" }}>{displayName}</div>
-          <div style={{ fontSize: "0.8rem", opacity: 0.8 }}>Nabízí do tohoto raidu:</div>
           <ul style={{ margin: "0.25rem 0 0", padding: "0 0 0 1rem" }}>
             {siblings.map((s) => (
               <li key={s.characterId} style={{ fontSize: "0.8rem" }}>
@@ -73,26 +96,71 @@ function PlayerTag({
   );
 }
 
-export function SetupBoard({ raidId, roster, assignments, conflictedAssignmentIds, readOnly }: Props) {
+function rosterEntryStyle(opts: { disabled: boolean; isSelected: boolean; readOnly: boolean }): CSSProperties {
+  return {
+    border: opts.isSelected ? "1px solid #7a7a7a" : "1px solid #444",
+    borderRadius: 4,
+    padding: "0.4rem 0.6rem",
+    fontSize: "0.9rem",
+    opacity: opts.disabled ? 0.35 : opts.isSelected ? 0.6 : 1,
+    cursor: opts.readOnly || opts.disabled ? "default" : "pointer",
+    background: opts.isSelected ? "#2a2a2a" : "transparent",
+  };
+}
+
+function cardStyle(opts: { conflicted: boolean; isSelected: boolean; readOnly: boolean }): CSSProperties {
+  return {
+    border: opts.conflicted ? "1px solid #e8b339" : opts.isSelected ? "1px solid #7a7a7a" : "1px solid #444",
+    background: opts.conflicted ? "#3a2f16" : opts.isSelected ? "#2a2a2a" : "#1c1c1c",
+    opacity: opts.isSelected ? 0.7 : 1,
+    borderRadius: 4,
+    padding: "0.35rem 0.5rem",
+    fontSize: "0.85rem",
+    cursor: opts.readOnly ? "default" : "pointer",
+    display: "grid",
+    gap: "0.25rem",
+  };
+}
+
+function emptySlotStyle(readOnly: boolean, hasSelection: boolean): CSSProperties {
+  return {
+    border: "1px dashed #333",
+    borderRadius: 4,
+    padding: "0.35rem 0.5rem",
+    fontSize: "0.8rem",
+    opacity: 0.5,
+    cursor: readOnly || !hasSelection ? "default" : "pointer",
+    minHeight: "1.4rem",
+  };
+}
+
+export function SetupBoard({
+  raidId,
+  roster,
+  otherCharacters,
+  assignments,
+  conflictedAssignmentIds,
+  initialNotes,
+  readOnly,
+}: Props) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [selectedRole, setSelectedRole] = useState<CharRole | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [roleFilter, setRoleFilter] = useState<Set<CharRole>>(new Set());
+  const [externalSearch, setExternalSearch] = useState("");
+  const [notes, setNotes] = useState(initialNotes ?? "");
+  const [notesError, setNotesError] = useState<string | null>(null);
+  const [notesPending, startNotesTransition] = useTransition();
 
   const characterInfoById = useMemo(() => {
     const map = new Map<string, RosterCharacter>();
-    for (const c of roster) map.set(c.characterId, c);
+    for (const c of [...roster, ...otherCharacters]) map.set(c.characterId, c);
     return map;
-  }, [roster]);
+  }, [roster, otherCharacters]);
 
-  const rosterByUser = useMemo(() => {
-    const map = new Map<string, RosterCharacter[]>();
-    for (const c of roster) {
-      const list = map.get(c.userId) ?? [];
-      list.push(c);
-      map.set(c.userId, list);
-    }
-    return map;
-  }, [roster]);
+  const rosterByUser = useMemo(() => groupByUser(roster), [roster]);
+  const otherByUser = useMemo(() => groupByUser(otherCharacters), [otherCharacters]);
 
   const assignmentByCharacterId = useMemo(() => {
     const map = new Map<string, Assignment>();
@@ -100,27 +168,48 @@ export function SetupBoard({ raidId, roster, assignments, conflictedAssignmentId
     return map;
   }, [assignments]);
 
-  /** Kterou postavu má který hráč v TOMTO raidu obsazenou (jakýkoli status) — pro šednutí sourozenců. */
-  const assignedCharacterIdByUserId = useMemo(() => {
+  /** Kterou postavu má který hráč v tomto raidu obsazenou — včetně toho, co je právě VYBRANÉ
+   * (ne jen už uložené), ať ostatní alty hned zešednou i před samotným přiřazením. */
+  const reservedCharacterIdByUserId = useMemo(() => {
     const map = new Map<string, string>();
     for (const a of assignments) map.set(a.userId, a.characterId);
+    if (selected) {
+      const info = characterInfoById.get(selected);
+      if (info) map.set(info.userId, selected);
+    }
     return map;
-  }, [assignments]);
+  }, [assignments, selected, characterInfoById]);
 
   const conflictedSet = useMemo(() => new Set(conflictedAssignmentIds), [conflictedAssignmentIds]);
+  const conflictedAssignments = useMemo(
+    () => assignments.filter((a) => conflictedSet.has(a.id)),
+    [assignments, conflictedSet],
+  );
 
-  const groupOccupants = useMemo(() => {
-    const map = new Map<number, Assignment[]>();
+  const groupSlotMap = useMemo(() => {
+    const map = new Map<string, Assignment>();
     for (const a of assignments) {
-      if (a.status !== "CONFIRMED" || a.groupNo === null) continue;
-      const list = map.get(a.groupNo) ?? [];
-      list.push(a);
-      map.set(a.groupNo, list);
+      if (a.status === "CONFIRMED" && a.groupNo !== null && a.slotNo !== null) {
+        map.set(`${a.groupNo}-${a.slotNo}`, a);
+      }
     }
     return map;
   }, [assignments]);
 
   const benchList = useMemo(() => assignments.filter((a) => a.status === "BENCH"), [assignments]);
+
+  const filteredRoster = useMemo(
+    () => (roleFilter.size === 0 ? roster : roster.filter((c) => roleFilter.has(c.characterRole))),
+    [roster, roleFilter],
+  );
+
+  const filteredOther = useMemo(() => {
+    const q = externalSearch.trim().toLowerCase();
+    if (!q) return otherCharacters;
+    return otherCharacters.filter(
+      (c) => c.characterName.toLowerCase().includes(q) || c.displayName.toLowerCase().includes(q),
+    );
+  }, [otherCharacters, externalSearch]);
 
   function runAction(fn: () => Promise<void>) {
     setError(null);
@@ -128,30 +217,72 @@ export function SetupBoard({ raidId, roster, assignments, conflictedAssignmentId
       try {
         await fn();
         setSelected(null);
+        setSelectedRole(null);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Něco se pokazilo.");
       }
     });
   }
 
+  function toggleRoleFilter(role: CharRole) {
+    setRoleFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(role)) next.delete(role);
+      else next.add(role);
+      return next;
+    });
+  }
+
   function handleSelectCharacter(characterId: string, disabled: boolean) {
     if (readOnly || disabled) return;
     setError(null);
-    setSelected((cur) => (cur === characterId ? null : characterId));
+    if (selected === characterId) {
+      setSelected(null);
+      setSelectedRole(null);
+      return;
+    }
+    const info = characterInfoById.get(characterId);
+    const existing = assignmentByCharacterId.get(characterId);
+    setSelected(characterId);
+    setSelectedRole(existing?.roleInRaid ?? info?.characterRole ?? null);
   }
 
-  function handleSlotClick(groupNo: number) {
-    if (readOnly || !selected) return;
-    const character = characterInfoById.get(selected);
-    if (!character) return;
-    runAction(() => assignToGroup(raidId, selected, character.userId, groupNo));
+  function handleSlotClick(groupNo: number, slotNo: number) {
+    if (readOnly) return;
+    const targetAssignment = groupSlotMap.get(`${groupNo}-${slotNo}`);
+
+    if (!selected) {
+      if (targetAssignment) handleSelectCharacter(targetAssignment.characterId, false);
+      return;
+    }
+
+    const info = characterInfoById.get(selected);
+    if (!info) return;
+
+    if (!targetAssignment) {
+      runAction(() =>
+        assignToGroup(raidId, selected, info.userId, groupNo, slotNo, selectedRole ?? undefined),
+      );
+      return;
+    }
+    if (targetAssignment.characterId === selected) {
+      setSelected(null);
+      setSelectedRole(null);
+      return;
+    }
+    const selectedAssignment = assignmentByCharacterId.get(selected);
+    if (!selectedAssignment) {
+      setError(`Slot ${slotNo} ve skupině ${groupNo} je obsazený — vyber prázdný slot.`);
+      return;
+    }
+    runAction(() => swapAssignments(raidId, selected, targetAssignment.characterId));
   }
 
   function handleBenchZoneClick() {
     if (readOnly || !selected) return;
-    const character = characterInfoById.get(selected);
-    if (!character) return;
-    runAction(() => benchCharacter(raidId, selected, character.userId));
+    const info = characterInfoById.get(selected);
+    if (!info) return;
+    runAction(() => benchCharacter(raidId, selected, info.userId, selectedRole ?? undefined));
   }
 
   function handleRemove(characterId: string) {
@@ -159,115 +290,290 @@ export function SetupBoard({ raidId, roster, assignments, conflictedAssignmentId
     runAction(() => removeAssignment(raidId, characterId));
   }
 
-  function renderAssignedCard(a: Assignment) {
+  function handleRoleChange(characterId: string, role: CharRole) {
+    if (readOnly) return;
+    runAction(() => setAssignmentRole(raidId, characterId, role));
+  }
+
+  function handleSaveNotes() {
+    setNotesError(null);
+    startNotesTransition(async () => {
+      try {
+        await updateSetupNotes(raidId, notes);
+      } catch (e) {
+        setNotesError(e instanceof Error ? e.message : "Něco se pokazilo.");
+      }
+    });
+  }
+
+  function renderRosterEntry(c: RosterCharacter, siblingsMap: Map<string, RosterCharacter[]>) {
+    const reservedBy = reservedCharacterIdByUserId.get(c.userId);
+    const disabled = reservedBy !== undefined && reservedBy !== c.characterId;
+    const isSelected = selected === c.characterId;
+    const currentAssignment = assignmentByCharacterId.get(c.characterId);
+    return (
+      <div
+        key={c.characterId}
+        onClick={() => handleSelectCharacter(c.characterId, disabled)}
+        style={rosterEntryStyle({ disabled, isSelected, readOnly })}
+      >
+        <div>
+          <strong>{c.characterName}</strong>{" "}
+          <span style={{ opacity: 0.7 }}>
+            ({c.characterClass}, {c.characterRole})
+          </span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <PlayerTag displayName={c.displayName} siblings={siblingsMap.get(c.userId) ?? []} />
+          {currentAssignment && (
+            <span style={{ fontSize: "0.75rem", opacity: 0.8 }}>
+              {currentAssignment.status === "CONFIRMED"
+                ? `skupina ${currentAssignment.groupNo}/${currentAssignment.slotNo}`
+                : "bench"}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function renderAssignedCard(a: Assignment, onCardClick: () => void) {
     const info = characterInfoById.get(a.characterId);
     const conflicted = conflictedSet.has(a.id);
     const isSelected = selected === a.characterId;
     return (
       <div
         key={a.characterId}
-        onClick={() => handleSelectCharacter(a.characterId, false)}
-        style={{
-          border: conflicted ? "1px solid #e8b339" : "1px solid #444",
-          background: isSelected ? "#2a3a4a" : conflicted ? "#3a2f16" : "#1c1c1c",
-          borderRadius: 4,
-          padding: "0.35rem 0.5rem",
-          fontSize: "0.85rem",
-          cursor: readOnly ? "default" : "pointer",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: "0.4rem",
-        }}
+        onClick={onCardClick}
+        style={cardStyle({ conflicted, isSelected, readOnly })}
         title={conflicted ? "Konflikt: hráč má absenci pokrývající tento raid." : undefined}
       >
-        <span>
-          {conflicted && "⚠ "}
-          <strong>{info?.characterName ?? "?"}</strong>
-          {info && (
-            <>
-              {" "}
-              <PlayerTag displayName={info.displayName} siblings={rosterByUser.get(info.userId) ?? []} />
-            </>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.4rem" }}>
+          <span>
+            {conflicted && "⚠ "}
+            <strong>{info?.characterName ?? "?"}</strong>
+            {info && (
+              <>
+                {" "}
+                <PlayerTag displayName={info.displayName} siblings={rosterByUser.get(info.userId) ?? []} />
+              </>
+            )}
+          </span>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRemove(a.characterId);
+              }}
+              disabled={isPending}
+              style={{ fontSize: "0.75rem" }}
+            >
+              ×
+            </button>
           )}
-        </span>
+        </div>
         {!readOnly && (
-          <button
-            type="button"
-            onClick={(e) => {
+          <select
+            value={a.roleInRaid}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => {
               e.stopPropagation();
-              handleRemove(a.characterId);
+              handleRoleChange(a.characterId, e.target.value as CharRole);
             }}
-            disabled={isPending}
             style={{ fontSize: "0.75rem" }}
           >
-            ×
-          </button>
+            {ALL_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
         )}
       </div>
     );
   }
 
+  function renderSlot(groupNo: number, slotNo: number) {
+    const a = groupSlotMap.get(`${groupNo}-${slotNo}`);
+    if (!a) {
+      return (
+        <div
+          key={slotNo}
+          onClick={() => handleSlotClick(groupNo, slotNo)}
+          style={emptySlotStyle(readOnly, Boolean(selected))}
+        >
+          {!readOnly && selected ? `slot ${slotNo}` : ""}
+        </div>
+      );
+    }
+    return renderAssignedCard(a, () => handleSlotClick(groupNo, slotNo));
+  }
+
+  const selectedInfo = selected ? characterInfoById.get(selected) : undefined;
+
   return (
     <div>
+      <section style={{ marginBottom: "1rem" }}>
+        <h2>Poznámky k setupu</h2>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          style={{ width: "100%", maxWidth: 560 }}
+          disabled={readOnly}
+        />
+        {!readOnly && (
+          <div>
+            <button type="button" onClick={handleSaveNotes} disabled={notesPending}>
+              Uložit poznámku
+            </button>
+          </div>
+        )}
+        {notesError && <p style={{ color: "#ff6b6b" }}>{notesError}</p>}
+      </section>
+
       {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
       {readOnly && (
         <p style={{ opacity: 0.7 }}>Raid je uzavřený (DONE/CANCELLED) — setup je jen k nahlédnutí.</p>
       )}
-      {!readOnly && (
-        <p style={{ opacity: 0.7, fontSize: "0.9rem" }}>
-          Klikni na postavu v seznamu, pak na slot ve skupině (nebo na Bench).
-        </p>
+
+      {selected && !readOnly && (
+        <div
+          style={{
+            border: "1px solid #7a7a7a",
+            borderRadius: 4,
+            padding: "0.5rem 0.75rem",
+            margin: "0.5rem 0 1rem",
+            display: "flex",
+            gap: "0.75rem",
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            Vybráno: <strong>{selectedInfo?.characterName}</strong>
+          </span>
+          <label style={{ fontSize: "0.85rem" }}>
+            Role:{" "}
+            <select
+              value={selectedRole ?? ""}
+              onChange={(e) => setSelectedRole(e.target.value as CharRole)}
+            >
+              {ALL_ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span style={{ fontSize: "0.8rem", opacity: 0.7 }}>
+            klikni na slot / bench, nebo na jinou postavu v mřížce (prohodí pozice)
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setSelected(null);
+              setSelectedRole(null);
+            }}
+          >
+            Zrušit výběr
+          </button>
+        </div>
       )}
 
       <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap", alignItems: "flex-start" }}>
-        <section style={{ flex: "1 1 300px" }}>
-          <h2>Přihlášené postavy ({roster.length})</h2>
+        <section style={{ flex: "1 1 320px" }}>
+          <h2>Přihlášené postavy ({filteredRoster.length}/{roster.length})</h2>
+          <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
+            {ALL_ROLES.map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => toggleRoleFilter(r)}
+                style={{
+                  fontSize: "0.75rem",
+                  opacity: roleFilter.size === 0 || roleFilter.has(r) ? 1 : 0.4,
+                }}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
           <div style={{ display: "grid", gap: "0.4rem" }}>
-            {roster.length === 0 && <p style={{ opacity: 0.7 }}>Zatím se nikdo nepřihlásil.</p>}
-            {roster.map((c) => {
-              const assignedElsewhereByUser = assignedCharacterIdByUserId.get(c.userId);
-              const disabled =
-                assignedElsewhereByUser !== undefined && assignedElsewhereByUser !== c.characterId;
-              const isSelected = selected === c.characterId;
-              const currentAssignment = assignmentByCharacterId.get(c.characterId);
+            {filteredRoster.length === 0 && <p style={{ opacity: 0.7 }}>Nikdo neodpovídá filtru.</p>}
+            {filteredRoster.map((c) => renderRosterEntry(c, rosterByUser))}
+          </div>
+
+          <h2 style={{ marginTop: "1.5rem" }}>Bench</h2>
+          <div style={{ display: "grid", gap: "0.3rem" }}>
+            {benchList.map((a) => renderAssignedCard(a, () => handleSelectCharacter(a.characterId, false)))}
+            <div
+              onClick={handleBenchZoneClick}
+              style={emptySlotStyle(readOnly, Boolean(selected))}
+            >
+              {!readOnly && selected ? "klikni pro poslání na bench" : !readOnly ? "prázdno" : ""}
+            </div>
+          </div>
+
+          <h2 style={{ marginTop: "1.5rem" }}>Absence-konflikty ({conflictedAssignments.length})</h2>
+          {conflictedAssignments.length === 0 && <p style={{ opacity: 0.6 }}>Žádné.</p>}
+          <div style={{ display: "grid", gap: "0.3rem" }}>
+            {conflictedAssignments.map((a) => {
+              const info = characterInfoById.get(a.characterId);
               return (
                 <div
-                  key={c.characterId}
-                  onClick={() => handleSelectCharacter(c.characterId, disabled)}
+                  key={a.characterId}
                   style={{
-                    border: "1px solid #444",
+                    border: "1px solid #e8b339",
+                    background: "#3a2f16",
                     borderRadius: 4,
                     padding: "0.4rem 0.6rem",
-                    fontSize: "0.9rem",
-                    opacity: disabled ? 0.4 : 1,
-                    cursor: readOnly || disabled ? "default" : "pointer",
-                    background: isSelected ? "#2a3a4a" : "transparent",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "0.4rem",
+                    fontSize: "0.85rem",
                   }}
                 >
-                  <div>
-                    <strong>{c.characterName}</strong>{" "}
-                    <span style={{ opacity: 0.7 }}>
-                      ({c.characterClass}, {c.characterRole})
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <PlayerTag displayName={c.displayName} siblings={rosterByUser.get(c.userId) ?? []} />
-                    {currentAssignment && (
-                      <span style={{ fontSize: "0.75rem", opacity: 0.8 }}>
-                        {currentAssignment.status === "CONFIRMED"
-                          ? `skupina ${currentAssignment.groupNo}`
-                          : "bench"}
-                      </span>
-                    )}
-                  </div>
+                  <span>
+                    ⚠ <strong>{info?.characterName ?? "?"}</strong>{" "}
+                    {info && (
+                      <PlayerTag displayName={info.displayName} siblings={rosterByUser.get(info.userId) ?? []} />
+                    )}{" "}
+                    —{" "}
+                    {a.status === "CONFIRMED" ? `skupina ${a.groupNo}, slot ${a.slotNo}` : "bench"}
+                  </span>
+                  {!readOnly && (
+                    <button type="button" onClick={() => handleRemove(a.characterId)} disabled={isPending}>
+                      Odebrat ze setupu
+                    </button>
+                  )}
                 </div>
               );
             })}
           </div>
+
+          {!readOnly && (
+            <>
+              <h2 style={{ marginTop: "1.5rem" }}>
+                Přidat postavu mimo přihlášené ({otherCharacters.length})
+              </h2>
+              <input
+                placeholder="Hledat jménem postavy nebo hráče…"
+                value={externalSearch}
+                onChange={(e) => setExternalSearch(e.target.value)}
+                style={{ width: "100%", maxWidth: 320, marginBottom: "0.4rem" }}
+              />
+              <div style={{ display: "grid", gap: "0.3rem", maxHeight: 260, overflowY: "auto" }}>
+                {filteredOther.length === 0 && <p style={{ opacity: 0.7 }}>Nic nenalezeno.</p>}
+                {filteredOther.map((c) => renderRosterEntry(c, otherByUser))}
+              </div>
+            </>
+          )}
         </section>
 
-        <section style={{ flex: "2 1 480px" }}>
+        <section style={{ flex: "2 1 520px" }}>
           <h2>Mřížka (8 × 5)</h2>
           <div
             style={{
@@ -277,57 +583,18 @@ export function SetupBoard({ raidId, roster, assignments, conflictedAssignmentId
             }}
           >
             {GROUPS.map((groupNo) => {
-              const occupants = groupOccupants.get(groupNo) ?? [];
-              const freeSlots = SLOTS_PER_GROUP - occupants.length;
+              const filledCount = SLOTS.filter((s) => groupSlotMap.has(`${groupNo}-${s}`)).length;
               return (
                 <div key={groupNo} style={{ border: "1px solid #333", borderRadius: 6, padding: "0.5rem" }}>
                   <div style={{ fontSize: "0.85rem", opacity: 0.7, marginBottom: "0.35rem" }}>
-                    Skupina {groupNo} ({occupants.length}/{SLOTS_PER_GROUP})
+                    Skupina {groupNo} ({filledCount}/{SLOTS_PER_GROUP})
                   </div>
                   <div style={{ display: "grid", gap: "0.3rem" }}>
-                    {occupants.map(renderAssignedCard)}
-                    {Array.from({ length: Math.max(freeSlots, 0) }, (_, i) => (
-                      <div
-                        key={`empty-${groupNo}-${i}`}
-                        onClick={() => handleSlotClick(groupNo)}
-                        style={{
-                          border: "1px dashed #333",
-                          borderRadius: 4,
-                          padding: "0.35rem 0.5rem",
-                          fontSize: "0.8rem",
-                          opacity: 0.5,
-                          cursor: readOnly || !selected ? "default" : "pointer",
-                          minHeight: "1.4rem",
-                        }}
-                      >
-                        {!readOnly && selected ? "klikni pro přiřazení" : ""}
-                      </div>
-                    ))}
+                    {SLOTS.map((slotNo) => renderSlot(groupNo, slotNo))}
                   </div>
                 </div>
               );
             })}
-          </div>
-
-          <h2 style={{ marginTop: "1.5rem" }}>Bench</h2>
-          <div
-            onClick={handleBenchZoneClick}
-            style={{
-              border: "1px dashed #333",
-              borderRadius: 6,
-              padding: "0.5rem",
-              display: "grid",
-              gap: "0.3rem",
-              cursor: readOnly || !selected ? "default" : "pointer",
-              minHeight: "2.5rem",
-            }}
-          >
-            {benchList.length === 0 && (
-              <span style={{ opacity: 0.5, fontSize: "0.85rem" }}>
-                {!readOnly && selected ? "klikni pro poslání na bench" : "Nikdo na benchi."}
-              </span>
-            )}
-            {benchList.map(renderAssignedCard)}
           </div>
         </section>
       </div>

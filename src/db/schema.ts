@@ -230,6 +230,10 @@ export const assignment = pgTable(
     userId: uuid("user_id").notNull(),
     roleInRaid: charRole("role_in_raid").notNull(),
     groupNo: smallint("group_no"),
+    // Explicitní pozice 1-5 uvnitř skupiny (jinak by pořadí v mřížce bylo jen
+    // pořadí insertu). Uniqueness (raid_id, group_no, slot_no) se nevynucuje v
+    // DB — o kolize se stará appka (assignToGroup/swapAssignments).
+    slotNo: smallint("slot_no"),
     status: assignmentStatus("status").notNull().default("CONFIRMED"),
     // denormalizovaný čas raidu (plněno triggerem assignment_fill_raid_time)
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
@@ -244,6 +248,7 @@ export const assignment = pgTable(
     unique("assignment_raid_character_uq").on(t.raidId, t.characterId),
     // 40man: 8 skupin x 5 slotů (kapacita 5/skupinu se hlídá aplikačně, ne CHECKem).
     check("assignment_group_no_check", sql`${t.groupNo} BETWEEN 1 AND 8`),
+    check("assignment_slot_no_check", sql`${t.slotNo} BETWEEN 1 AND 5`),
     index("assignment_raid_id_idx").on(t.raidId),
     index("assignment_user_id_idx").on(t.userId),
     // POZN.: EXCLUDE USING gist (character_id WITH =, tstzrange(starts_at,ends_at)

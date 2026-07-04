@@ -4,7 +4,7 @@ import { db } from "@/db/client";
 import { assignment, raid } from "@/db/schema";
 
 export type BusyElsewhere = {
-  characterId: string;
+  userId: string;
   raidId: string;
   raidInstance: string;
   startsAt: Date;
@@ -12,24 +12,31 @@ export type BusyElsewhere = {
 };
 
 /**
- * Postavy z `characterIds`, které jsou CONFIRMED v JINÉM raidu, jehož čas se
+ * Hráči z `userIds`, kteří mají CONFIRMED postavu v JINÉM raidu, jehož čas se
  * překrývá s [startsAt, endsAt) tohoto raidu — proaktivní varování v setup
  * builderu, ať RL vidí dřív, než narazí na exclusion constraint (invariant 1)
- * teprve při pokusu o potvrzení. BENCH se nepočítá — stejná výjimka jako u
- * samotného constraintu: leader smí stejnou postavu tužkou hodit do dvou
- * raidů, jen ne potvrdit ve dvou najednou.
+ * teprve při pokusu o potvrzení.
+ *
+ * Klíčováno na hráče, ne na konkrétní postavu: za jednoho hráče nejde jít
+ * dvěma postavami současně, takže i kdyby byla „busy" jen jeho postava A,
+ * všechny jeho ostatní postavy B/C jsou stejně nedostupné — nikdo jiný z jeho
+ * účtu se do téhle skupiny nedostane.
+ *
+ * BENCH se nepočítá — stejná výjimka jako u samotného constraintu: leader smí
+ * stejného hráče tužkou hodit do dvou raidů, jen ho nemůže potvrdit ve dvou
+ * najednou.
  */
-export async function findCharactersConfirmedElsewhere(
+export async function findUsersConfirmedElsewhere(
   excludeRaidId: string,
   startsAt: Date,
   endsAt: Date,
-  characterIds: string[],
+  userIds: string[],
 ): Promise<BusyElsewhere[]> {
-  if (characterIds.length === 0) return [];
+  if (userIds.length === 0) return [];
 
   return db
     .select({
-      characterId: assignment.characterId,
+      userId: assignment.userId,
       raidId: assignment.raidId,
       raidInstance: raid.instance,
       startsAt: assignment.startsAt,
@@ -41,7 +48,7 @@ export async function findCharactersConfirmedElsewhere(
       and(
         ne(assignment.raidId, excludeRaidId),
         eq(assignment.status, "CONFIRMED"),
-        inArray(assignment.characterId, characterIds),
+        inArray(assignment.userId, userIds),
         lt(assignment.startsAt, endsAt),
         gt(assignment.endsAt, startsAt),
       ),

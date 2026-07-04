@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import type { Character } from "@/db/schema";
-import { createCharacter, updateCharacter } from "./actions";
+import { createCharacter, setMain, unsetMain, updateCharacter } from "./actions";
 import { WOW_CLASSES } from "./constants";
 
 const FACTIONS = ["ALLIANCE", "HORDE"] as const;
@@ -35,9 +35,29 @@ export function CharacterForm({
   const [values, setValues] = useState<Values>(() => deriveValues(character));
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [mainError, setMainError] = useState<string | null>(null);
+  const [mainPending, startMainTransition] = useTransition();
 
   function setField<K extends keyof Values>(key: K, value: Values[K]) {
     setValues((v) => ({ ...v, [key]: value }));
+  }
+
+  function handleToggleMain(checked: boolean) {
+    if (!character) return;
+    setMainError(null);
+    startMainTransition(async () => {
+      try {
+        if (checked) {
+          await setMain(character.id);
+        } else {
+          await unsetMain(character.id);
+        }
+      } catch (e) {
+        // Neúspěch (druhá hlavní) nechává stav beze změny — checkbox je řízený
+        // ze serverového `character.isMain`, takže bez revalidace zůstane, jak byl.
+        setMainError(e instanceof Error ? e.message : "Něco se pokazilo.");
+      }
+    });
   }
 
   function handleSubmit(formData: FormData) {
@@ -126,6 +146,18 @@ export function CharacterForm({
         />{" "}
         Raid ready
       </label>
+      {character && (
+        <label style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+          <input
+            type="checkbox"
+            checked={character.isMain}
+            disabled={mainPending}
+            onChange={(e) => handleToggleMain(e.target.checked)}
+          />
+          Hlavní
+        </label>
+      )}
+      {mainError && <p style={{ color: "#ff6b6b" }}>{mainError}</p>}
       <label>
         Odkaz (armory/logs)
         <input

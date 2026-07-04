@@ -175,9 +175,12 @@ export function SetupBoard({
     return map;
   }, [assignments]);
 
-  const busyElsewhereByCharacterId = useMemo(() => {
+  // Klíčováno na hráče, ne na postavu — za jednoho hráče nejde jít dvěma
+  // postavami současně, takže busy je celý hráč, i kdyby se to zjistilo přes
+  // jen jednu jeho konkrétní postavu.
+  const busyElsewhereByUserId = useMemo(() => {
     const map = new Map<string, BusyElsewhere>();
-    for (const b of busyElsewhere) map.set(b.characterId, b);
+    for (const b of busyElsewhere) map.set(b.userId, b);
     return map;
   }, [busyElsewhere]);
 
@@ -321,12 +324,14 @@ export function SetupBoard({
 
   function renderRosterEntry(c: RosterCharacter, siblingsMap: Map<string, RosterCharacter[]>) {
     const isSelected = selected === c.characterId;
-    const busy = busyElsewhereByCharacterId.get(c.characterId);
+    const busy = busyElsewhereByUserId.get(c.userId);
     // Zešedne i postava, která už JE přiřazená/benchnutá (ne jen její sourozenci) —
     // dál se s ní manipuluje přes kartu v mřížce/na benchi, ne přes roster. Stejně
-    // tak postava CONFIRMED v jiném časově překrývajícím se raidu (nedostupná, i
-    // kdyby tenhle raid teprve plánoval) — DB exclusion constraint by ji stejně
-    // odmítl. Výjimka: dokud je právě "vybraná", zůstává klikatelná kvůli deselectu.
+    // tak VŠECHNY postavy hráče, který má CONFIRMED postavu v jiném časově
+    // překrývajícím se raidu — za jednoho hráče nejde jít dvěma postavami
+    // současně, takže busy je celý hráč, ne jen ta konkrétní postava, přes
+    // kterou se to zjistilo. Výjimka: dokud je právě "vybraná", zůstává
+    // klikatelná kvůli deselectu.
     const reservedBy = reservedCharacterIdByUserId.get(c.userId);
     const disabled = (reservedBy !== undefined || Boolean(busy)) && !isSelected;
     const currentAssignment = assignmentByCharacterId.get(c.characterId);
@@ -337,7 +342,7 @@ export function SetupBoard({
         style={rosterEntryStyle({ disabled, isSelected, readOnly })}
         title={
           busy
-            ? `Obsazen v ${busy.raidInstance} (${formatTimeRange(busy.startsAt, busy.endsAt)})`
+            ? `Hráč obsazen v ${busy.raidInstance} (${formatTimeRange(busy.startsAt, busy.endsAt)})`
             : undefined
         }
       >
@@ -359,7 +364,7 @@ export function SetupBoard({
         </div>
         {busy && !currentAssignment && (
           <div style={{ fontSize: "0.75rem", color: "#e8b339" }}>
-            ⛔ obsazen v {busy.raidInstance}
+            ⛔ hráč obsazen v {busy.raidInstance}
           </div>
         )}
       </div>

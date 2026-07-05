@@ -14,7 +14,7 @@ import {
 } from "@/db/schema";
 import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { findConflictedAssignments } from "@/lib/absence-conflicts";
+import { findAbsentUserIdsForRaid, findConflictedAssignments } from "@/lib/absence-conflicts";
 import { findUsersConfirmedElsewhere, type BusyElsewhere } from "@/lib/character-availability";
 import { resolveDisplayName } from "@/lib/display-name";
 import { getMainCharacterNamesByUserId } from "@/lib/main-character";
@@ -82,6 +82,7 @@ export type SetupData = {
   assignments: Assignment[];
   conflictedAssignmentIds: string[];
   busyElsewhere: BusyElsewhere[];
+  absentUserIds: string[];
 };
 
 const CHARACTER_SELECT_SHAPE = {
@@ -176,6 +177,7 @@ export async function getSetupData(raidId: string): Promise<SetupData> {
     raidRow.endsAt,
     allUserIds,
   );
+  const absentUserIds = await findAbsentUserIdsForRaid(raidRow.startsAt, allUserIds);
 
   return {
     raid: raidRow,
@@ -184,6 +186,7 @@ export async function getSetupData(raidId: string): Promise<SetupData> {
     assignments: assignmentRows,
     conflictedAssignmentIds: conflicts.map((c) => c.assignmentId),
     busyElsewhere,
+    absentUserIds: [...absentUserIds],
   };
 }
 

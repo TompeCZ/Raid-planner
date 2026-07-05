@@ -55,3 +55,32 @@ export async function findConflictedRaidIds(raidIds: string[]): Promise<Set<stri
   const rows = await findConflictedAssignments({ raidIds });
   return new Set(rows.map((r) => r.raidId));
 }
+
+/**
+ * Hráči z `userIds`, kteří mají aktivní Absenci pokrývající termín raidu — bez
+ * ohledu na to, jestli v raidu vůbec mají assignment. Na rozdíl od
+ * `findConflictedAssignments` (jen CONFIRMED assignmenty, reverse-flow konflikt)
+ * tohle pokrývá i hráče, co jsou teprve v signup poolu — setup builder podle
+ * toho vyřazuje jejich postavy ze sekce „Přihlášené" do sekce „Absence", ať
+ * leader vidí absenci dřív, než se ji pokusí (marně) přiřadit. Stejná podmínka
+ * data jako trigger `assignment_block_on_absence` (DATE(starts_at AT TIME ZONE 'UTC')).
+ */
+export async function findAbsentUserIdsForRaid(
+  raidStartsAt: Date,
+  userIds: string[],
+): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+
+  const rows = await db
+    .select({ userId: absence.userId })
+    .from(absence)
+    .where(
+      and(
+        inArray(absence.userId, userIds),
+        isNull(absence.deletedAt),
+        sql`(${raidStartsAt}::timestamptz AT TIME ZONE 'UTC')::date BETWEEN ${absence.fromDate} AND ${absence.toDate}`,
+      ),
+    );
+
+  return new Set(rows.map((r) => r.userId));
+}

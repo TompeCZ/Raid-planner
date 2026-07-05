@@ -31,6 +31,7 @@ type Props = {
   assignments: Assignment[];
   conflictedAssignmentIds: string[];
   busyElsewhere: BusyElsewhere[];
+  absentUserIds: string[];
   initialNotes: string | null;
   readOnly: boolean;
 };
@@ -147,6 +148,7 @@ export function SetupBoard({
   assignments,
   conflictedAssignmentIds,
   busyElsewhere,
+  absentUserIds,
   initialNotes,
   readOnly,
 }: Props) {
@@ -197,10 +199,6 @@ export function SetupBoard({
   }, [assignments, selected, characterInfoById]);
 
   const conflictedSet = useMemo(() => new Set(conflictedAssignmentIds), [conflictedAssignmentIds]);
-  const conflictedAssignments = useMemo(
-    () => assignments.filter((a) => conflictedSet.has(a.id)),
-    [assignments, conflictedSet],
-  );
 
   const groupSlotMap = useMemo(() => {
     const map = new Map<string, Assignment>();
@@ -214,9 +212,31 @@ export function SetupBoard({
 
   const benchList = useMemo(() => assignments.filter((a) => a.status === "BENCH"), [assignments]);
 
+  const absentUserIdSet = useMemo(() => new Set(absentUserIds), [absentUserIds]);
+  // Skutečně existující assignmenty (ne tentativní "selected" stav) — kým je
+  // hráč obsazen v mřížce nebo na benchi, nezávisle na tom, co si právě vybírá.
+  const assignedUserIdSet = useMemo(() => new Set(assignments.map((a) => a.userId)), [assignments]);
+
+  // "Přihlášené postavy" = jen to, co ještě čeká na rozhodnutí — hráč, který má
+  // absenci nebo už (v mřížce/na benchi) přiřazenou JINOU svou postavu, odsud
+  // zmizí celý (všechny jeho alty), ať seznam neroste zbytečně — viz sekce
+  // Absence/Bench/mřížka, kde se dál zobrazuje.
+  const eligibleRoster = useMemo(
+    () => roster.filter((c) => !absentUserIdSet.has(c.userId) && !assignedUserIdSet.has(c.userId)),
+    [roster, absentUserIdSet, assignedUserIdSet],
+  );
+
+  // Postavy hráčů s aktivní absencí pokrývající tenhle raid — bez ohledu na to,
+  // jestli mají v raidu assignment (viz findAbsentUserIdsForRaid). Zůstávají tu
+  // i po odebrání ze setupu, dokud absence trvá — jen zmizí tlačítko "Odebrat".
+  const absentEntries = useMemo(
+    () => roster.filter((c) => absentUserIdSet.has(c.userId)),
+    [roster, absentUserIdSet],
+  );
+
   const filteredRoster = useMemo(
-    () => (roleFilter.size === 0 ? roster : roster.filter((c) => roleFilter.has(c.characterRole))),
-    [roster, roleFilter],
+    () => (roleFilter.size === 0 ? eligibleRoster : eligibleRoster.filter((c) => roleFilter.has(c.characterRole))),
+    [eligibleRoster, roleFilter],
   );
 
   const filteredOther = useMemo(() => {
@@ -499,7 +519,7 @@ export function SetupBoard({
 
       <div className="setup-columns">
         <section className="setup-col-roster">
-          <h2>Přihlášené postavy ({filteredRoster.length}/{roster.length})</h2>
+          <h2>Přihlášené postavy ({filteredRoster.length}/{eligibleRoster.length})</h2>
           <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
             {ALL_ROLES.map((r) => (
               <button
@@ -531,14 +551,14 @@ export function SetupBoard({
             </div>
           </div>
 
-          <h2 style={{ marginTop: "1.5rem" }}>Absence-konflikty ({conflictedAssignments.length})</h2>
-          {conflictedAssignments.length === 0 && <p style={{ opacity: 0.6 }}>Žádné.</p>}
+          <h2 style={{ marginTop: "1.5rem" }}>Absence ({absentEntries.length})</h2>
+          {absentEntries.length === 0 && <p style={{ opacity: 0.6 }}>Žádné.</p>}
           <div style={{ display: "grid", gap: "0.3rem" }}>
-            {conflictedAssignments.map((a) => {
-              const info = characterInfoById.get(a.characterId);
+            {absentEntries.map((c) => {
+              const currentAssignment = assignmentByCharacterId.get(c.characterId);
               return (
                 <div
-                  key={a.characterId}
+                  key={c.characterId}
                   style={{
                     border: "1px solid #e8b339",
                     background: "#3a2f16",
@@ -552,15 +572,20 @@ export function SetupBoard({
                   }}
                 >
                   <span>
-                    ⚠ <strong>{info?.characterName ?? "?"}</strong>{" "}
-                    {info && (
-                      <PlayerTag displayName={info.displayName} siblings={rosterByUser.get(info.userId) ?? []} />
-                    )}{" "}
-                    —{" "}
-                    {a.status === "CONFIRMED" ? `skupina ${a.groupNo}, slot ${a.slotNo}` : "bench"}
+                    ⚠ <strong>{c.characterName}</strong>{" "}
+                    <PlayerTag displayName={c.displayName} siblings={rosterByUser.get(c.userId) ?? []} />
+                    {currentAssignment && (
+                      <>
+                        {" "}
+                        —{" "}
+                        {currentAssignment.status === "CONFIRMED"
+                          ? `skupina ${currentAssignment.groupNo}, slot ${currentAssignment.slotNo}`
+                          : "bench"}
+                      </>
+                    )}
                   </span>
-                  {!readOnly && (
-                    <button type="button" onClick={() => handleRemove(a.characterId)} disabled={isPending}>
+                  {!readOnly && currentAssignment && (
+                    <button type="button" onClick={() => handleRemove(c.characterId)} disabled={isPending}>
                       Odebrat ze setupu
                     </button>
                   )}

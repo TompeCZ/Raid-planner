@@ -38,6 +38,7 @@ export default async function SetupPage({ params }: { params: Promise<{ raidId: 
         absentUserIds={absentUserIds}
         initialNotes={raid.notes}
         readOnly={!isRaidEditable(raid.status)}
+        canPublishToDiscord={raid.status === "LOCKED"}
       />
     </main>
   );

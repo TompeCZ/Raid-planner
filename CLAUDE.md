@@ -39,15 +39,18 @@ npx tsc --noEmit           # typecheck (samostatný lint skript není definován
 
 Unit testy (Vitest) žijí vedle testovaného kódu jako `*.test.ts` — čistě validace/přechody
 stavů/serializace (`raid-validation`, `raid-status`, `absence-validation`, `setup-validation`,
-`local-date`, `month-grid`, `ical`), žádné nesahají na DB ani na Supabase. Pokud testovaná funkce žije
-v souboru, který (třeba tranzitivně přes `@/lib/auth`) importuje `server-only`, vyčleň ji do
-samostatného čistého modulu (viz `characters/main-error.ts`) — jinak test spadne na runtime throw z
+`local-date`, `month-grid`, `ical`, `discord-emoji`, `discord-announcement`, `discord-setup-embed`),
+žádné nesahají na DB ani na Supabase. Pokud testovaná funkce žije v souboru, který (třeba tranzitivně
+přes `@/lib/auth`) importuje `server-only`, vyčleň ji do samostatného čistého modulu (viz
+`characters/main-error.ts`, `setup/discord-setup-embed.ts`) — jinak test spadne na runtime throw z
 `server-only`, ne na assert. Absence-conflict detekce a setup builder actions (DB dotazy, upserty,
-Discord webhook) testy zatím nemají — vyžadovalo by to testovací DB nebo mockování Postgres.
+Discord webhook volání) testy zatím nemají — vyžadovalo by to testovací DB nebo mockování Postgres.
 
 Vyžaduje `.env` (viz `.env.example`) s `DATABASE_URL` (Supabase Postgres), `NEXT_PUBLIC_SUPABASE_URL`,
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` a `NEXT_PUBLIC_SITE_URL`. Discord OAuth client id/secret se nastavují
-v Supabase dashboardu (Authentication > Providers > Discord), aplikace je sama nečte.
+v Supabase dashboardu (Authentication > Providers > Discord), aplikace je sama nečte. `DISCORD_RAID_WEBHOOK_URL`
+a `DISCORD_EMOJI_*` jsou volitelné (viz „Discord publikace" níže) — bez nich Discord publikace jen
+vrátí chybu v UI, appka nespadne.
 
 ## Architektura
 
@@ -221,6 +224,7 @@ Aktuálně implementované vertikály:
   (aplikační pravidlo, ne DB constraint), vizuální konflikt při absenci.
 - `/` (dashboard) + `/calendar` + `/api/calendar/[token]` — read-only přehled a měsíční kalendář
   (raidy + absence), iCal odběr do Google/Apple kalendáře. Viz „Kalendář, dashboard a iCal odběr" výše.
+- Discord publikace (oznámení raidu + setup) — viz „Discord publikace" níže.
 
 Create/update/cancel/setup raidu je omezené na role `RAID_LEADER`/`ADMIN` — predikát `canManageRaids()`
 v `src/lib/auth.ts`, vynucený v server actions přes lokální `requireRaidLeader()` a zrcadlený v UI
@@ -228,9 +232,33 @@ v `src/lib/auth.ts`, vynucený v server actions přes lokální `requireRaidLead
 "jen někteří RL na raid" je BACKLOG.
 
 `src/lib/audit.ts#logAudit()` zapisuje do `audit_log` jen smysluplné akce (přechod stavu raidu,
-přiřazení/bench/odebrání postavy ze setupu, vznik absence-konfliktu) — ne každý klik.
+přiřazení/bench/odebrání postavy ze setupu, vznik absence-konfliktu, Discord publikace) — ne každý klik.
 
-Zatím neimplementováno (existuje jen jako schema/spec, viz `docs/spec.md` §7–8): publikování setupu do
-Discordu (samostatná vertikála — webhook infrastruktura z absence-konfliktu se dá znovupoužít),
-drag-and-drop v setup builderu, přepínač „jen někteří RL" pro setup, auto-lock raidu podle času,
-`AttendanceRecord`, `Note`, WCL import háčky.
+### Discord publikace (oznámení raidu + setup)
+
+Druhá Discord integrace vedle absence-conflict pingu (`src/lib/discord-webhook.ts` — `sendDiscordWebhook`
+zůstal beze změny chování, jen teď deleguje na `postDiscordMessage`). Jeden sdílený kanál pro celou
+guildu přes env `DISCORD_RAID_WEBHOOK_URL` (ne DB `discordWebhookUrl`/`discordWebhookOverride`, to zůstává
+jen pro absence-conflict ping). TODO(multi-room): časem víc kanálů → přejít z env na tabulku kanálů.
+
+- **Oznámení** — `raids/[raidId]/actions.ts#announceRaidToDiscord()`, tlačítko v `raid-header.tsx`,
+  dostupné od stavu `OPEN`. `@here` + instance/datum (Europe/Prague) + statický počet přihlášených +
+  odkaz na raid — pinguje se v `content` (plaintext), embed by nepingnul. Message id se ukládá do
+  `raid.discordAnnouncementMessageId`; druhé a další spuštění zprávu EDITUJE (osvěží počet) místo nové.
+- **Setup** — `raids/[raidId]/setup/actions.ts#publishSetupToDiscord()`, tlačítko v `setup-board.tsx`,
+  jen v `LOCKED`. Embed (`setup/discord-setup-embed.ts#buildSetupEmbed`, čistá funkce): skupiny G1–8 jako
+  inline fieldy (Discord si je sám poskládá 3 na řádek), bloky Bench/Late/Absence pod nimi. Jméno ve
+  skupině/na benchi/Late = PŘIŘAZENÁ postava (Late bez přiřazení: SINGLE mód → postava ze signupu, ALL
+  mód bez přiřazení → fallback na hlavní jméno hráče, protože ořezaný pool může mít víc postav a nejde
+  jednoznačně vybrat — okomentováno v kódu). Absence = hlavní jméno (`resolveDisplayName`), nikdy
+  nepinguje. Content pinguje sjednocení CONFIRMED+BENCH+LATE jako `<@discordId>`.
+  Class emoji (`src/lib/discord-emoji.ts#emojiFor`) je config-driven přes `DISCORD_EMOJI_*`; prázdné
+  (výchozí) = Unicode emoji podle role, plnohodnotný stav, ne placeholder.
+  Message id v `raid.discordSetupMessageId`; re-publikace EDITUJE stejnou zprávu a navíc spočítá diff
+  proti `raid.discordSetupSnapshot` (`discord-setup-embed.ts#diffSetupSnapshots`, jeden záznam na
+  `userId`, priorita CONFIRMED > BENCH > LATE) — přidané/stažené hráče ohlásí NOVOU fire-and-forget
+  zprávou (editace zprávy nepinguje), snapshot se pak přepíše.
+
+Zatím neimplementováno (existuje jen jako schema/spec, viz `docs/spec.md` §7–8): drag-and-drop v setup
+builderu, přepínač „jen někteří RL" pro setup, auto-lock raidu podle času, `AttendanceRecord`, `Note`,
+WCL import háčky, skutečné DM hráčům (fáze 2 s hostovaným botem).

@@ -16,8 +16,18 @@ import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { findAbsentUserIdsForRaid, findConflictedAssignments } from "@/lib/absence-conflicts";
 import { findUsersConfirmedElsewhere, type BusyElsewhere } from "@/lib/character-availability";
+import { editDiscordMessage, postDiscordMessage, type DiscordMessagePayload } from "@/lib/discord-webhook";
 import { resolveDisplayName } from "@/lib/display-name";
+import { formatRaidDateTimeLabel } from "@/lib/local-date";
 import { getMainCharacterNamesByUserId } from "@/lib/main-character";
+import {
+  buildSetupChangeNoticeContent,
+  buildSetupEmbed,
+  buildSetupPingContent,
+  diffSetupSnapshots,
+  type DiscordSetupSnapshotEntry,
+  type SetupEmbedGroup,
+} from "./discord-setup-embed";
 import { isRaidEditable } from "../../raid-status";
 import { assertValidGroupNo, assertValidSlotNo } from "./setup-validation";
 
@@ -444,4 +454,233 @@ export async function updateSetupNotes(raidId: string, note: string) {
   });
   revalidatePath(`/raids/${raidId}/setup`);
   revalidatePath(`/raids/${raidId}`);
+}
+
+/**
+ * Publikuje hotový setup do Discordu (jeden sdílený kanál, `DISCORD_RAID_WEBHOOK_URL`
+ * — stejný env jako oznámení raidu). Jen v `LOCKED`, jinak setup ještě není
+ * finální. První publikace pošle novou zprávu, každá další EDITUJE tu samou
+ * (message id v `raid.discordSetupMessageId`) a navíc pošle fire-and-forget
+ * změnovou zprávu (ČÁST C) podle diffu proti uloženému snapshotu.
+ */
+export async function publishSetupToDiscord(raidId: string): Promise<{ ok: boolean; error?: string }> {
+  const appUser = await requireRaidLeader();
+
+  const [raidRow] = await db.select().from(raid).where(eq(raid.id, raidId)).limit(1);
+  if (!raidRow) return { ok: false, error: "Raid nenalezen." };
+  if (raidRow.status !== "LOCKED") {
+    return { ok: false, error: "Setup lze publikovat, jen když je raid LOCKED." };
+  }
+
+  const webhookUrl = process.env.DISCORD_RAID_WEBHOOK_URL;
+  if (!webhookUrl) {
+    return { ok: false, error: "DISCORD_RAID_WEBHOOK_URL není nastavené." };
+  }
+
+  const assignmentRows = await db
+    .select({
+      userId: assignment.userId,
+      discordId: user.discordId,
+      displayName: user.displayName,
+      characterName: character.name,
+      characterClass: character.class,
+      role: assignment.roleInRaid,
+      status: assignment.status,
+      groupNo: assignment.groupNo,
+      slotNo: assignment.slotNo,
+    })
+    .from(assignment)
+    .innerJoin(character, eq(character.id, assignment.characterId))
+    .innerJoin(user, eq(user.id, assignment.userId))
+    .where(eq(assignment.raidId, raidId));
+
+  const signupRows = await db
+    .select({
+      signupId: signup.id,
+      userId: signup.userId,
+      status: signup.status,
+      discordId: user.discordId,
+      displayName: user.displayName,
+    })
+    .from(signup)
+    .innerJoin(user, eq(user.id, signup.userId))
+    .where(eq(signup.raidId, raidId));
+
+  const lateSignupRows = signupRows.filter((r) => r.status === "LATE");
+  const lateSignupIds = lateSignupRows.map((r) => r.signupId);
+  const lateSignupCharacterRows =
+    lateSignupIds.length > 0
+      ? await db
+          .select({ signupId: signupCharacter.signupId, characterName: character.name })
+          .from(signupCharacter)
+          .innerJoin(character, eq(character.id, signupCharacter.characterId))
+          .where(inArray(signupCharacter.signupId, lateSignupIds))
+      : [];
+  const lateCharNamesBySignupId = new Map<string, string[]>();
+  for (const r of lateSignupCharacterRows) {
+    const list = lateCharNamesBySignupId.get(r.signupId) ?? [];
+    list.push(r.characterName);
+    lateCharNamesBySignupId.set(r.signupId, list);
+  }
+
+  const candidateUserIds = [
+    ...new Set([...assignmentRows.map((r) => r.userId), ...signupRows.map((r) => r.userId)]),
+  ];
+  const mainNames = await getMainCharacterNamesByUserId(candidateUserIds);
+  const absentUserIds = await findAbsentUserIdsForRaid(raidRow.startsAt, candidateUserIds);
+
+  const assignmentByUserId = new Map(assignmentRows.map((r) => [r.userId, r]));
+  const userInfoById = new Map<string, { discordId: string; displayName: string }>();
+  for (const r of assignmentRows) userInfoById.set(r.userId, { discordId: r.discordId, displayName: r.displayName });
+  for (const r of signupRows) userInfoById.set(r.userId, { discordId: r.discordId, displayName: r.displayName });
+
+  const confirmedRows = assignmentRows.filter((r) => r.status === "CONFIRMED");
+  const benchRows = assignmentRows.filter((r) => r.status === "BENCH");
+
+  const confirmedByGroup = new Map<number, typeof confirmedRows>();
+  for (const r of confirmedRows) {
+    if (r.groupNo === null) continue;
+    const list = confirmedByGroup.get(r.groupNo) ?? [];
+    list.push(r);
+    confirmedByGroup.set(r.groupNo, list);
+  }
+  const groups: SetupEmbedGroup[] = [...confirmedByGroup.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([groupNo, rows]) => ({
+      groupNo,
+      members: rows
+        .slice()
+        .sort((a, b) => (a.slotNo ?? 0) - (b.slotNo ?? 0))
+        .map((r) => ({ characterName: r.characterName, characterClass: r.characterClass, role: r.role })),
+    }));
+
+  const benchMembers = benchRows.map((r) => ({
+    characterName: r.characterName,
+    characterClass: r.characterClass,
+    role: r.role,
+  }));
+
+  // Edge case (viz zadání): LATE hráč bez přiřazení v ALL módu mohl nabídnout víc
+  // postav (ořezaný pool) — nejde jednoznačně vybrat, kterou nakonec pojede, takže
+  // místo hádání alta ukážeme jeho hlavní identitu. V SINGLE módu je pool přesně
+  // jedna postava, tu použijeme přímo.
+  const lateEntries = lateSignupRows.map((r) => {
+    const existing = assignmentByUserId.get(r.userId);
+    let name: string;
+    if (existing) {
+      name = existing.characterName;
+    } else if (raidRow.signupMode === "SINGLE") {
+      const chars = lateCharNamesBySignupId.get(r.signupId) ?? [];
+      name = chars[0] ?? resolveDisplayName({ displayName: r.displayName }, mainNames.get(r.userId) ?? null);
+    } else {
+      name = resolveDisplayName({ displayName: r.displayName }, mainNames.get(r.userId) ?? null);
+    }
+    return { userId: r.userId, discordId: r.discordId, name };
+  });
+
+  const absenceEntries = [...absentUserIds].map((userId) => {
+    const info = userInfoById.get(userId);
+    return {
+      userId,
+      name: resolveDisplayName({ displayName: info?.displayName ?? "?" }, mainNames.get(userId) ?? null),
+    };
+  });
+
+  const embed = buildSetupEmbed({
+    raidInstance: raidRow.instance,
+    raidDateLabel: formatRaidDateTimeLabel(raidRow.startsAt),
+    groups,
+    bench: benchMembers,
+    late: lateEntries.map((l) => ({ name: l.name })),
+    absence: absenceEntries.map((a) => ({ name: a.name })),
+  });
+
+  // Pingy (content) = CONFIRMED + BENCH + LATE. Absence se nepinguje.
+  const participantDiscordIds = [
+    ...new Set(
+      [...confirmedRows, ...benchRows, ...lateEntries]
+        .map((r) => r.discordId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const content = buildSetupPingContent(participantDiscordIds);
+  const payload: DiscordMessagePayload = {
+    content,
+    embeds: [embed],
+    allowed_mentions: { parse: ["users"] },
+  };
+
+  // Snapshot = jeden záznam na userId, priorita CONFIRMED > BENCH > LATE (diff
+  // v ČÁSTI C se dívá jen na přítomnost userId, ne na state/groupNo).
+  const nextSnapshot: DiscordSetupSnapshotEntry[] = [];
+  const seenUserIds = new Set<string>();
+  for (const r of confirmedRows) {
+    seenUserIds.add(r.userId);
+    nextSnapshot.push({
+      userId: r.userId,
+      discordId: r.discordId,
+      name: r.characterName,
+      state: "CONFIRMED",
+      groupNo: r.groupNo,
+    });
+  }
+  for (const r of benchRows) {
+    if (seenUserIds.has(r.userId)) continue;
+    seenUserIds.add(r.userId);
+    nextSnapshot.push({ userId: r.userId, discordId: r.discordId, name: r.characterName, state: "BENCH", groupNo: null });
+  }
+  for (const l of lateEntries) {
+    if (seenUserIds.has(l.userId)) continue;
+    seenUserIds.add(l.userId);
+    nextSnapshot.push({ userId: l.userId, discordId: l.discordId, name: l.name, state: "LATE", groupNo: null });
+  }
+
+  let ok: boolean;
+  let error: string | undefined;
+
+  if (!raidRow.discordSetupMessageId) {
+    const posted = await postDiscordMessage(webhookUrl, payload);
+    if (posted) {
+      await db
+        .update(raid)
+        .set({ discordSetupMessageId: posted.id, discordSetupSnapshot: nextSnapshot })
+        .where(eq(raid.id, raidId));
+      ok = true;
+    } else {
+      ok = false;
+      error = "Odeslání Discord zprávy selhalo.";
+    }
+  } else {
+    const edited = await editDiscordMessage(webhookUrl, raidRow.discordSetupMessageId, payload);
+    if (edited) {
+      const previousSnapshot = (raidRow.discordSetupSnapshot as DiscordSetupSnapshotEntry[] | null) ?? [];
+      const diff = diffSetupSnapshots(previousSnapshot, nextSnapshot);
+      if (diff.added.length > 0 || diff.removed.length > 0) {
+        // Fire-and-forget — editace zprávy hráče nepinguje, takže změna jde
+        // novou zprávou; její id se neukládá, smysl je jen zapingovat.
+        await postDiscordMessage(webhookUrl, {
+          content: buildSetupChangeNoticeContent(diff),
+          allowed_mentions: { parse: ["users"] },
+        });
+      }
+      await db.update(raid).set({ discordSetupSnapshot: nextSnapshot }).where(eq(raid.id, raidId));
+      ok = true;
+    } else {
+      ok = false;
+      error = "Editace Discord zprávy selhala.";
+    }
+  }
+
+  if (ok) {
+    await logAudit({
+      actorId: appUser.id,
+      action: "setup_published_discord",
+      targetType: "raid",
+      targetId: raidId,
+      description: `${raidRow.instance}: setup publikován na Discord.`,
+    });
+  }
+
+  revalidateSetup(raidId);
+  return ok ? { ok: true } : { ok: false, error };
 }

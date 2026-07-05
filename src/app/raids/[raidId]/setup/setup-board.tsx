@@ -7,6 +7,7 @@ import type { BusyElsewhere } from "@/lib/character-availability";
 import {
   assignToGroup,
   benchCharacter,
+  publishSetupToDiscord,
   removeAssignment,
   setAssignmentRole,
   swapAssignments,
@@ -34,6 +35,7 @@ type Props = {
   absentUserIds: string[];
   initialNotes: string | null;
   readOnly: boolean;
+  canPublishToDiscord: boolean;
 };
 
 function groupByUser(list: RosterCharacter[]): Map<string, RosterCharacter[]> {
@@ -151,11 +153,14 @@ export function SetupBoard({
   absentUserIds,
   initialNotes,
   readOnly,
+  canPublishToDiscord,
 }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedRole, setSelectedRole] = useState<CharRole | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [discordResult, setDiscordResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [isPublishing, startPublishTransition] = useTransition();
   const [roleFilter, setRoleFilter] = useState<Set<CharRole>>(new Set());
   const [externalSearch, setExternalSearch] = useState("");
   const [notes, setNotes] = useState(initialNotes ?? "");
@@ -338,6 +343,17 @@ export function SetupBoard({
     runAction(() => setAssignmentRole(raidId, characterId, role));
   }
 
+  function handlePublishToDiscord() {
+    setDiscordResult(null);
+    startPublishTransition(async () => {
+      const result = await publishSetupToDiscord(raidId);
+      setDiscordResult({
+        ok: result.ok,
+        message: result.ok ? "Setup publikován na Discord." : (result.error ?? "Něco se pokazilo."),
+      });
+    });
+  }
+
   function handleSaveNotes() {
     setNotesError(null);
     startNotesTransition(async () => {
@@ -484,6 +500,19 @@ export function SetupBoard({
       {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
       {readOnly && (
         <p style={{ opacity: 0.7 }}>Raid je uzavřený (DONE/CANCELLED) — setup je jen k nahlédnutí.</p>
+      )}
+
+      {canPublishToDiscord && (
+        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", margin: "0.5rem 0 1rem" }}>
+          <button type="button" onClick={handlePublishToDiscord} disabled={isPublishing}>
+            Publikovat na Discord
+          </button>
+          {discordResult && (
+            <span style={{ fontSize: "0.85rem", color: discordResult.ok ? "#4ea1ff" : "#ff6b6b" }}>
+              {discordResult.message}
+            </span>
+          )}
+        </div>
       )}
 
       {selected && !readOnly && (

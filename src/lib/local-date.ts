@@ -15,6 +15,20 @@ export function toPragueDateKey(date: Date): string {
   }).format(date);
 }
 
+const RAID_DATETIME_FORMAT = new Intl.DateTimeFormat("cs-CZ", {
+  weekday: "short",
+  day: "numeric",
+  month: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: PRAGUE_TZ,
+});
+
+/** Datum+čas raidu pro Discord zprávy (oznámení, setup embed) — lokální Europe/Prague, lidsky čitelné. */
+export function formatRaidDateTimeLabel(date: Date): string {
+  return RAID_DATETIME_FORMAT.format(date);
+}
+
 /**
  * Datum-klíč `days` dní od pražského kalendářního dne, ve kterém leží `from`.
  * Kotví na poledni UTC toho dne (bezpečně uvnitř pražského dne bez ohledu na

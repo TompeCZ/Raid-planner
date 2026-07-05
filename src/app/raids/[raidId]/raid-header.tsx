@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import type { CSSProperties } from "react";
 import type { Raid } from "@/db/schema";
-import { updateRaid, setRaidStatus } from "./actions";
+import { announceRaidToDiscord, updateRaid, setRaidStatus } from "./actions";
 import { fieldForRaidFormError } from "../raid-validation";
 import {
   RAID_STATUS_TRANSITIONS,
@@ -41,6 +41,8 @@ export function RaidHeader({ raid, canManage }: { raid: Raid; canManage: boolean
   const [error, setError] = useState<string | null>(null);
   const [errorField, setErrorField] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [discordResult, setDiscordResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [isAnnouncing, startAnnounceTransition] = useTransition();
 
   function setField<K extends keyof Values>(key: K, value: Values[K]) {
     setValues((v) => ({ ...v, [key]: value }));
@@ -72,6 +74,17 @@ export function RaidHeader({ raid, canManage }: { raid: Raid; canManage: boolean
 
   function fieldStyle(name: string): CSSProperties | undefined {
     return errorField === name ? { borderColor: "#ff6b6b", outline: "1px solid #ff6b6b" } : undefined;
+  }
+
+  function handleAnnounce() {
+    setDiscordResult(null);
+    startAnnounceTransition(async () => {
+      const result = await announceRaidToDiscord(raid.id);
+      setDiscordResult({
+        ok: result.ok,
+        message: result.ok ? "Oznámení odesláno na Discord." : (result.error ?? "Něco se pokazilo."),
+      });
+    });
   }
 
   function handleStatusChange(status: Raid["status"]) {
@@ -188,7 +201,7 @@ export function RaidHeader({ raid, canManage }: { raid: Raid; canManage: boolean
       {raid.notes && <p style={{ opacity: 0.7 }}>{raid.notes}</p>}
       {error && <p style={{ color: "#ff6b6b" }}>{error}</p>}
       {canManage && (
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
           {isRaidEditable(raid.status) && (
             <button onClick={openEditing} disabled={isPending}>
               Upravit raid
@@ -199,6 +212,16 @@ export function RaidHeader({ raid, canManage }: { raid: Raid; canManage: boolean
               {RAID_STATUS_ACTION_LABELS[target]}
             </button>
           ))}
+          {raid.status !== "DRAFT" && (
+            <button onClick={handleAnnounce} disabled={isAnnouncing}>
+              Oznámit na Discord
+            </button>
+          )}
+          {discordResult && (
+            <span style={{ fontSize: "0.85rem", color: discordResult.ok ? "#4ea1ff" : "#ff6b6b" }}>
+              {discordResult.message}
+            </span>
+          )}
         </div>
       )}
     </div>

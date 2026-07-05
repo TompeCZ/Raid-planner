@@ -7,7 +7,10 @@ import { raid, signup, signupCharacter, character, signupStatus, user } from "@/
 import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { resolveDisplayName } from "@/lib/display-name";
+import { editDiscordMessage, postDiscordMessage, type DiscordMessagePayload } from "@/lib/discord-webhook";
+import { formatRaidDateTimeLabel } from "@/lib/local-date";
 import { getMainCharacterNamesByUserId } from "@/lib/main-character";
+import { buildAnnouncementContent } from "./discord-announcement";
 import { readRaidForm } from "../raid-validation";
 import { canTransitionRaidStatus, isRaidEditable } from "../raid-status";
 
@@ -215,4 +218,64 @@ export async function withdrawSignup(raidId: string) {
 
   await db.delete(signup).where(eq(signup.id, existing.id));
   revalidatePath(`/raids/${raidId}`);
+}
+
+/**
+ * Oznámí raid do Discordu (jeden sdílený kanál guildy, `DISCORD_RAID_WEBHOOK_URL`
+ * — TODO(multi-room): časem víc kanálů → přejít z env na tabulku kanálů).
+ * Dostupné od stavu OPEN (ne DRAFT). Počet přihlášených je STATICKÝ k okamžiku
+ * odeslání — při další publikaci (message id už existuje) se zpráva EDITUJE
+ * (osvěží počet), nevytváří se nová.
+ */
+export async function announceRaidToDiscord(raidId: string): Promise<{ ok: boolean; error?: string }> {
+  const appUser = await requireRaidLeader();
+  const raidRow = await requireRaid(raidId);
+
+  if (raidRow.status === "DRAFT") {
+    return { ok: false, error: "Raid musí být aspoň OPEN, než ho lze oznámit." };
+  }
+
+  const webhookUrl = process.env.DISCORD_RAID_WEBHOOK_URL;
+  if (!webhookUrl) {
+    return { ok: false, error: "DISCORD_RAID_WEBHOOK_URL není nastavené." };
+  }
+
+  const signupRows = await db.select({ id: signup.id }).from(signup).where(eq(signup.raidId, raidId));
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  const content = buildAnnouncementContent({
+    instance: raidRow.instance,
+    dateLabel: formatRaidDateTimeLabel(raidRow.startsAt),
+    signupCount: signupRows.length,
+    raidUrl: `${siteUrl}/raids/${raidId}`,
+  });
+  // @here je uvnitř content (plaintext), ne v embedu — embed samotný by nepingnul.
+  const payload: DiscordMessagePayload = { content, allowed_mentions: { parse: ["everyone"] } };
+
+  let ok: boolean;
+  let error: string | undefined;
+  if (raidRow.discordAnnouncementMessageId) {
+    ok = await editDiscordMessage(webhookUrl, raidRow.discordAnnouncementMessageId, payload);
+    if (!ok) error = "Editace Discord zprávy selhala.";
+  } else {
+    const posted = await postDiscordMessage(webhookUrl, payload);
+    if (posted) {
+      await db.update(raid).set({ discordAnnouncementMessageId: posted.id }).where(eq(raid.id, raidId));
+      ok = true;
+    } else {
+      ok = false;
+      error = "Odeslání Discord zprávy selhalo.";
+    }
+  }
+
+  if (ok) {
+    await logAudit({
+      actorId: appUser.id,
+      action: "raid_announced_discord",
+      targetType: "raid",
+      targetId: raidId,
+      description: `${raidRow.instance}: oznámeno na Discordu (${signupRows.length} přihlášených).`,
+    });
+  }
+  revalidatePath(`/raids/${raidId}`);
+  return ok ? { ok: true } : { ok: false, error };
 }

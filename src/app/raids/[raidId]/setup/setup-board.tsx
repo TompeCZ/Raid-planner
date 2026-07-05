@@ -239,13 +239,20 @@ export function SetupBoard({
     [eligibleRoster, roleFilter],
   );
 
+  // Hráč s absencí pokrývající tenhle raid nejde přiřadit (trigger by to stejně
+  // zablokoval) — nemá smysl ho nabízet ani v "mimo přihlášené".
+  const eligibleOtherCharacters = useMemo(
+    () => otherCharacters.filter((c) => !absentUserIdSet.has(c.userId)),
+    [otherCharacters, absentUserIdSet],
+  );
+
   const filteredOther = useMemo(() => {
     const q = externalSearch.trim().toLowerCase();
-    if (!q) return otherCharacters;
-    return otherCharacters.filter(
+    if (!q) return eligibleOtherCharacters;
+    return eligibleOtherCharacters.filter(
       (c) => c.characterName.toLowerCase().includes(q) || c.displayName.toLowerCase().includes(q),
     );
-  }, [otherCharacters, externalSearch]);
+  }, [eligibleOtherCharacters, externalSearch]);
 
   function runAction(fn: () => Promise<void>) {
     setError(null);
@@ -371,6 +378,9 @@ export function SetupBoard({
           <span style={{ opacity: 0.7 }}>
             ({c.characterClass}, {c.characterRole})
           </span>
+          {c.signupStatus === "LATE" && (
+            <span style={{ fontSize: "0.7rem", opacity: 0.75 }}> ⏰ pozdě</span>
+          )}
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <PlayerTag displayName={c.displayName} siblings={siblingsMap.get(c.userId) ?? []} />
@@ -411,6 +421,9 @@ export function SetupBoard({
                 {" "}
                 <PlayerTag displayName={info.displayName} siblings={rosterByUser.get(info.userId) ?? []} />
               </>
+            )}
+            {info?.signupStatus === "LATE" && (
+              <span style={{ fontSize: "0.7rem", opacity: 0.75 }}> ⏰ pozdě</span>
             )}
           </span>
           {!readOnly && (
@@ -560,8 +573,7 @@ export function SetupBoard({
                 <div
                   key={c.characterId}
                   style={{
-                    border: "1px solid #e8b339",
-                    background: "#3a2f16",
+                    border: "1px solid #444",
                     borderRadius: 4,
                     padding: "0.4rem 0.6rem",
                     display: "flex",
@@ -572,7 +584,7 @@ export function SetupBoard({
                   }}
                 >
                   <span>
-                    ⚠ <strong>{c.characterName}</strong>{" "}
+                    <strong>{c.characterName}</strong>{" "}
                     <PlayerTag displayName={c.displayName} siblings={rosterByUser.get(c.userId) ?? []} />
                     {currentAssignment && (
                       <>
@@ -636,7 +648,7 @@ export function SetupBoard({
           {!readOnly && (
             <>
               <h2 style={{ marginTop: "1.5rem" }}>
-                Přidat postavu mimo přihlášené ({otherCharacters.length})
+                Přidat postavu mimo přihlášené ({eligibleOtherCharacters.length})
               </h2>
               <input
                 placeholder="Hledat jménem postavy nebo hráče…"

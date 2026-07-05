@@ -94,15 +94,29 @@ export function CalendarGrid({ year, month, todayKey, data }: Props) {
               {dayAbsences.length > 0 && (
                 <span
                   style={{
-                    width: 5,
-                    height: 5,
-                    borderRadius: "50%",
-                    background: "#e8b339",
-                    opacity: 0.8,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.2rem",
                     marginTop: "auto",
                   }}
                   title={`${dayAbsences.length} absence`}
-                />
+                >
+                  <span
+                    style={{
+                      width: 5,
+                      height: 5,
+                      borderRadius: "50%",
+                      background: "#e8b339",
+                      opacity: 0.8,
+                      flexShrink: 0,
+                    }}
+                  />
+                  {dayAbsences.length > 1 && (
+                    <span style={{ fontSize: "0.65rem", opacity: 0.8, color: "#e8b339" }}>
+                      {dayAbsences.length}
+                    </span>
+                  )}
+                </span>
               )}
             </button>
           );

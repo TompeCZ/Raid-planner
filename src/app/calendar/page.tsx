@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { getMyCalendarToken } from "@/app/actions";
+import { CalendarConnect } from "@/app/calendar-connect";
 import { getCurrentAppUser } from "@/lib/auth";
 import { toPragueDateKey } from "@/lib/local-date";
 import { getCalendarMonth } from "./actions";
@@ -32,6 +34,8 @@ export default async function CalendarPage({
   const month = Number(params.m) || todayMonth;
 
   const data = await getCalendarMonth(year, month);
+  const calendarToken = await getMyCalendarToken();
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
 
   const prevMonth = shiftMonth(year, month, -1);
   const nextMonth = shiftMonth(year, month, 1);
@@ -73,6 +77,8 @@ export default async function CalendarPage({
       </p>
 
       <CalendarGrid year={year} month={month} todayKey={todayKey} data={data} />
+
+      <CalendarConnect initialToken={calendarToken} siteUrl={siteUrl} />
     </main>
   );
 }

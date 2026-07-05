@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
-import { CLASS_COLORS } from "@/app/characters/constants";
+import { AbsenceChip, RaidMarkerPill } from "./day-markers";
 import type { CalendarMonthData } from "./actions";
 import { absencesForDay, buildMonthGrid } from "./month-grid";
 
@@ -19,11 +20,6 @@ type Props = {
   data: CalendarMonthData;
 };
 
-function classColor(characterClass: string | null): string | undefined {
-  if (!characterClass) return undefined;
-  return (CLASS_COLORS as Record<string, string>)[characterClass];
-}
-
 /** `YYYY-MM-DD` -> `DD. MM.` (jednoduché lidské formátování bez další knihovny/TZ). */
 function formatDateKeyShort(dateKey: string): string {
   const [, m, d] = dateKey.split("-");
@@ -39,6 +35,7 @@ export function CalendarGrid({ year, month, todayKey, data }: Props) {
     () => (selectedDay ? absencesForDay(data.absences, selectedDay) : []),
     [selectedDay, data.absences],
   );
+  const selectedRaids = selectedDay ? (data.raidsByDay[selectedDay] ?? []) : [];
 
   return (
     <div>
@@ -88,15 +85,10 @@ export function CalendarGrid({ year, month, todayKey, data }: Props) {
               <span style={{ fontSize: "0.8rem" }}>{cell.day}</span>
 
               {dayRaids.length > 0 && (
-                <span
-                  className="cal-raid-marker"
+                <RaidMarkerPill
+                  instance={dayRaids.length === 1 ? dayRaids[0].instance : `${dayRaids.length}× raid`}
                   title={dayRaids.map((r) => `${r.instance} (${TIME_FORMAT.format(r.startsAt)})`).join(", ")}
-                >
-                  <span className="dot" />
-                  <span className="text">
-                    {dayRaids.length === 1 ? dayRaids[0].instance : `${dayRaids.length}× raid`}
-                  </span>
-                </span>
+                />
               )}
 
               {dayAbsences.length > 0 && (
@@ -120,37 +112,44 @@ export function CalendarGrid({ year, month, todayKey, data }: Props) {
       <div style={{ marginTop: "1rem", borderTop: "1px solid #333", paddingTop: "0.75rem" }}>
         {selectedDay ? (
           <>
-            <h3 style={{ margin: "0 0 0.5rem" }}>Absence — {formatDateKeyShort(selectedDay)}</h3>
-            {selectedAbsences.length === 0 ? (
-              <p style={{ opacity: 0.6, fontSize: "0.9rem" }}>Žádné absence tento den.</p>
+            <h3 style={{ margin: "0 0 0.5rem" }}>{formatDateKeyShort(selectedDay)}</h3>
+            {selectedRaids.length === 0 && selectedAbsences.length === 0 ? (
+              <p style={{ opacity: 0.6, fontSize: "0.9rem" }}>Žádné raidy ani absence tento den.</p>
             ) : (
-              <div style={{ display: "grid", gap: "0.4rem" }}>
-                {selectedAbsences.map((a) => (
-                  <div key={a.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    <span
-                      style={{
-                        border: "1px solid #555",
-                        borderRadius: 12,
-                        padding: "0.15rem 0.5rem",
-                        background: "#1c1c1c",
-                        color: classColor(a.characterClass) ?? "#e6e6e6",
-                        fontSize: "0.85rem",
-                      }}
-                    >
-                      {a.displayName}
-                    </span>
-                    <span style={{ fontSize: "0.8rem", opacity: 0.7 }}>
-                      {a.fromDate === a.toDate
-                        ? formatDateKeyShort(a.fromDate)
-                        : `${formatDateKeyShort(a.fromDate)} – ${formatDateKeyShort(a.toDate)}`}
-                    </span>
+              <div style={{ display: "grid", gap: "0.75rem" }}>
+                {selectedRaids.length > 0 && (
+                  <div style={{ display: "grid", gap: "0.4rem" }}>
+                    {selectedRaids.map((r) => (
+                      <div key={r.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <Link href={`/raids/${r.id}`}>
+                          <RaidMarkerPill instance={r.instance} full />
+                        </Link>
+                        <span style={{ fontSize: "0.8rem", opacity: 0.7 }}>
+                          {TIME_FORMAT.format(r.startsAt)}–{TIME_FORMAT.format(r.endsAt)}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+                {selectedAbsences.length > 0 && (
+                  <div style={{ display: "grid", gap: "0.4rem" }}>
+                    {selectedAbsences.map((a) => (
+                      <div key={a.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <AbsenceChip displayName={a.displayName} characterClass={a.characterClass} />
+                        <span style={{ fontSize: "0.8rem", opacity: 0.7 }}>
+                          {a.fromDate === a.toDate
+                            ? formatDateKeyShort(a.fromDate)
+                            : `${formatDateKeyShort(a.fromDate)} – ${formatDateKeyShort(a.toDate)}`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </>
         ) : (
-          <p style={{ opacity: 0.5, fontSize: "0.9rem" }}>Klikni (nebo najeď) na den pro detail absencí.</p>
+          <p style={{ opacity: 0.5, fontSize: "0.9rem" }}>Klikni (nebo najeď) na den pro detail raidů a absencí.</p>
         )}
       </div>
     </div>

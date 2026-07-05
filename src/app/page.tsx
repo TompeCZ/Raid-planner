@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AbsenceChip, RaidMarkerPill } from "@/app/calendar/day-markers";
 import { getCurrentAppUser } from "@/lib/auth";
-import { CalendarConnect } from "./calendar-connect";
-import { getDashboardRaids, getMyCalendarToken } from "./actions";
+import { getDashboardRaids } from "./actions";
 
 const WEEKDAY_FORMAT = new Intl.DateTimeFormat("cs-CZ", {
   weekday: "long",
@@ -34,8 +34,6 @@ export default async function DashboardPage() {
 
   const days = await getDashboardRaids();
   const todayKey = days[0]?.dateKey;
-  const calendarToken = await getMyCalendarToken();
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
 
   return (
     <main>
@@ -50,34 +48,52 @@ export default async function DashboardPage() {
       </nav>
 
       <h2>Příštích 7 dní</h2>
-      <div style={{ display: "grid", gap: "0.75rem" }}>
-        {days.map((day) => (
-          <div key={day.dateKey} style={{ borderBottom: "1px solid #333", paddingBottom: "0.5rem" }}>
-            <div style={{ fontWeight: "bold", textTransform: "capitalize" }}>
-              {formatDayLabel(day.dateKey)}
-              {day.dateKey === todayKey && (
-                <span style={{ fontWeight: "normal", opacity: 0.6 }}> · dnes</span>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "0.6rem" }}>
+        {days.map((day) => {
+          const isToday = day.dateKey === todayKey;
+          return (
+            <div
+              key={day.dateKey}
+              style={{
+                border: isToday ? "1px solid #4ea1ff" : "1px solid #333",
+                borderRadius: 6,
+                padding: "0.5rem",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.35rem",
+              }}
+            >
+              <div style={{ fontWeight: "bold", fontSize: "0.85rem", textTransform: "capitalize" }}>
+                {formatDayLabel(day.dateKey)}
+                {isToday && <span style={{ fontWeight: "normal", opacity: 0.6 }}> · dnes</span>}
+              </div>
+              {day.raids.length === 0 && day.absences.length === 0 ? (
+                <div style={{ opacity: 0.5, fontSize: "0.85rem" }}>Žádné raidy ani absence.</div>
+              ) : (
+                <>
+                  {day.raids.map((r) => (
+                    <div key={r.id} style={{ display: "flex", alignItems: "center", gap: "0.35rem", flexWrap: "wrap" }}>
+                      <Link href={`/raids/${r.id}`}>
+                        <RaidMarkerPill instance={r.instance} full />
+                      </Link>
+                      <span style={{ fontSize: "0.75rem", opacity: 0.7 }}>
+                        {formatTimeRange(r.startsAt, r.endsAt)}
+                      </span>
+                    </div>
+                  ))}
+                  {day.absences.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
+                      {day.absences.map((a) => (
+                        <AbsenceChip key={a.id} displayName={a.displayName} characterClass={a.characterClass} />
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
-            {day.raids.length === 0 ? (
-              <div style={{ opacity: 0.5, fontSize: "0.9rem" }}>Žádné raidy.</div>
-            ) : (
-              <ul style={{ margin: "0.25rem 0 0", padding: 0 }}>
-                {day.raids.map((r) => (
-                  <li key={r.id} style={{ listStyle: "none", fontSize: "0.9rem" }}>
-                    <Link href={`/raids/${r.id}`}>
-                      <strong>{r.instance}</strong>
-                    </Link>{" "}
-                    {formatTimeRange(r.startsAt, r.endsAt)}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
-
-      <CalendarConnect initialToken={calendarToken} siteUrl={siteUrl} />
     </main>
   );
 }

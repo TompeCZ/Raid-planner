@@ -111,6 +111,17 @@ main.wide {
   }
 }
 
+/* Varianta bez mobilního zkolabování na jen-tečku — dashboard a detail dne
+   v kalendáři mají dost místa, název raidu má být vidět na jakékoliv šířce.
+   Vyšší specificita (dvě třídy) přebije pravidla výše bez ohledu na pořadí. */
+.cal-raid-marker.cal-raid-marker--full {
+  background: #22344a;
+  padding: 1px 6px;
+}
+.cal-raid-marker.cal-raid-marker--full .text {
+  display: inline;
+}
+
 button {
   font: inherit;
   cursor: pointer;

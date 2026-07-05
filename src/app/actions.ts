@@ -1,10 +1,14 @@
 "use server";
 
-import { and, eq, gte, lt, notInArray, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
+import type { CalendarAbsence } from "@/app/calendar/actions";
+import { absencesForDay } from "@/app/calendar/month-grid";
 import { db } from "@/db/client";
-import { raid, user } from "@/db/schema";
+import { absence, raid, user } from "@/db/schema";
 import { getCurrentAppUser } from "@/lib/auth";
+import { resolveDisplayName } from "@/lib/display-name";
 import { pragueDateKeyPlusDays, toPragueDateKey } from "@/lib/local-date";
+import { getMainCharactersByUserId } from "@/lib/main-character";
 
 async function requireAppUser() {
   const appUser = await getCurrentAppUser();
@@ -15,12 +19,14 @@ async function requireAppUser() {
 export type DashboardDay = {
   dateKey: string;
   raids: (typeof raid.$inferSelect)[];
+  absences: CalendarAbsence[];
 };
 
 /**
- * Raidy pro dashboard: 7 po sobě jdoucích pražských dní od dneška, bucketované
- * podle LOKÁLNÍHO (Europe/Prague) dne startu — ne podle UTC. DRAFT/CANCELLED
- * se nezobrazují (dashboard = co je reálně naplánované).
+ * Raidy + absence pro dashboard: 7 po sobě jdoucích pražských dní od dneška,
+ * bucketované podle LOKÁLNÍHO (Europe/Prague) dne startu — ne podle UTC.
+ * Raidy DRAFT/CANCELLED se nezobrazují (dashboard = co je reálně naplánované).
+ * Stejný vizuál i zdroj dat absencí jako `/calendar` (viz getCalendarMonth).
  */
 export async function getDashboardRaids(): Promise<DashboardDay[]> {
   await requireAppUser();
@@ -53,7 +59,45 @@ export async function getDashboardRaids(): Promise<DashboardDay[]> {
     raidsByDay.get(key)?.push(row);
   }
 
-  return dayKeys.map((dateKey) => ({ dateKey, raids: raidsByDay.get(dateKey) ?? [] }));
+  const weekStartKey = dayKeys[0];
+  const weekEndKey = dayKeys[dayKeys.length - 1];
+  const absenceRows = await db
+    .select({
+      id: absence.id,
+      userId: absence.userId,
+      fromDate: absence.fromDate,
+      toDate: absence.toDate,
+      displayName: user.displayName,
+    })
+    .from(absence)
+    .innerJoin(user, eq(user.id, absence.userId))
+    .where(
+      and(
+        isNull(absence.deletedAt),
+        lte(absence.fromDate, weekEndKey),
+        gte(absence.toDate, weekStartKey),
+      ),
+    );
+
+  const mainByUser = await getMainCharactersByUserId([
+    ...new Set(absenceRows.map((a) => a.userId)),
+  ]);
+  const absences: CalendarAbsence[] = absenceRows.map((a) => {
+    const main = mainByUser.get(a.userId);
+    return {
+      id: a.id,
+      fromDate: a.fromDate,
+      toDate: a.toDate,
+      displayName: resolveDisplayName({ displayName: a.displayName }, main?.name ?? null),
+      characterClass: main?.class ?? null,
+    };
+  });
+
+  return dayKeys.map((dateKey) => ({
+    dateKey,
+    raids: raidsByDay.get(dateKey) ?? [],
+    absences: absencesForDay(absences, dateKey),
+  }));
 }
 
 /** Aktuální iCal odběrový token přihlášeného hráče (nebo null, pokud si ho ještě nevygeneroval). */

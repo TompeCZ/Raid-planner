@@ -169,6 +169,12 @@ export const raid = pgTable(
     notes: text("notes"),
     wclReportCode: text("wcl_report_code"),
     discordWebhookOverride: text("discord_webhook_override"),
+    // Discord publikace (setup + oznámení raidu) — viz raids/[raidId]/actions.ts
+    // a raids/[raidId]/setup/actions.ts. Message id umožňuje re-publikaci přes
+    // edit místo nové zprávy; snapshot je vstup pro diff změnových zpráv (ČÁST C).
+    discordAnnouncementMessageId: text("discord_announcement_message_id"),
+    discordSetupMessageId: text("discord_setup_message_id"),
+    discordSetupSnapshot: jsonb("discord_setup_snapshot"),
   },
   (t) => [
     check("raid_time_order", sql`${t.endsAt} > ${t.startsAt}`),

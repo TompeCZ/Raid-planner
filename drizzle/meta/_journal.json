@@ -36,6 +36,13 @@
       "when": 1783205422376,
       "tag": "0004_add_user_calendar_token",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783284772749,
+      "tag": "0005_sticky_doctor_doom",
+      "breakpoints": true
     }
   ]
 }

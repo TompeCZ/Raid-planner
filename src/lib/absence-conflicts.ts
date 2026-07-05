@@ -78,7 +78,7 @@ export async function findAbsentUserIdsForRaid(
       and(
         inArray(absence.userId, userIds),
         isNull(absence.deletedAt),
-        sql`(${raidStartsAt}::timestamptz AT TIME ZONE 'UTC')::date BETWEEN ${absence.fromDate} AND ${absence.toDate}`,
+        sql`(${raidStartsAt.toISOString()}::timestamptz AT TIME ZONE 'UTC')::date BETWEEN ${absence.fromDate} AND ${absence.toDate}`,
       ),
     );
 

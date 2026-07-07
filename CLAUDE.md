@@ -30,12 +30,13 @@ npm start                 # spuštění produkčního buildu
 
 npm run db:generate       # vygeneruje Drizzle migraci ze src/db/schema.ts
 npm run db:migrate        # aplikuje migrace z drizzle/
-npm run db:push           # promítne schema přímo bez migračního souboru — jen pro dev
 npm run db:studio         # GUI Drizzle Studio
 
 npm test                  # unit testy (Vitest, `vitest run`)
 npx tsc --noEmit           # typecheck (samostatný lint skript není definován)
 ```
+
+⚠️ Nikdy nepoužívej `drizzle-kit push` / `db:push`. Tiše shodí ručně psané DB objekty, které Drizzle neumí vyjádřit ve `schema.ts` — exclusion constraint (`btree_gist`), triggery a partial unique indexy. Schema se mění výhradně: `db:generate` → ruční doplnění constraintů/indexů/triggerů do `drizzle/*.sql` → `db:migrate`.
 
 Unit testy (Vitest) žijí vedle testovaného kódu jako `*.test.ts` — čistě validace/přechody
 stavů/serializace (`raid-validation`, `raid-status`, `absence-validation`, `setup-validation`,

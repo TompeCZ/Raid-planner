@@ -195,10 +195,26 @@ Loguje se: raid vytvořen/zrušen, hráč benchnut, přepsaná cizí absence, se
 
 - **WCL import** — GraphQL API v2, OAuth client‑credentials (limit 3 600 bodů/h), report dle kódu → párování na postavy přes name+realm. Předvyplní `PRESENT`/`NO_SHOW`, RL potvrdí; `LATE_*` a `LEFT_EARLY` zůstávají ruční.
 - **DM notifikace** (vyžaduje hostovaného bota) — diskrétnější benched alert, kombinace s @mention.
+  Vyžaduje připnutý Gateway/WebSocket bot (ne jen webhook) pro plnou obousměrnou integraci.
+- **Import postav z Discord serveru** — načíst/napárovat postavy hráčů přímo z Discord guildy.
 - **Připomínky** X h před startem.
 - **Auto‑import gearu** z komunitního armory (scrape) — křehké.
 - **Guild entita / multi‑roster filtr** — zatím netřeba.
-- **Loot systém** — loot council zůstává mimo systém, jen `lootNote` jako vodítko.
+- **Loot systém** — loot council zůstává mimo systém, jen `lootNote` jako vodítko. Promyslet import
+  výsledku loot council a archivaci pro přehled, kdo už má jaké itemy — především setovky (tier sety).
+- **Discord setup embed — sumář rolí nahoře** — na začátek embedu (před skupiny G1–8) přidat součty
+  Tank/Healer/DPS; pořadí zůstává sumář rolí → skupiny → přehled Late/Bench/Absence.
+- **Ikony specializací** — sada ikon per specializace (ne jen per role jako dosud u
+  `discord-emoji.ts#emojiFor`) pro použití v Discord setup embedu.
+- **Absence přehled — vizuál a řazení** — na `/absences` zobrazit proběhlé absence šedě (stejný vzor
+  jako zašednutí postav v setup builderu), řadit od nejnovější po nejstarší.
+- **Drag-and-drop v Setup Builderu** (vysoká priorita) — náhrada dnešního click-click přiřazování.
+- **Auto-lock raidu** podle času startu (dnes jen ruční přechod LOCKED).
+- **Per-raid přepínač „nech ostatní RL editovat"** — dnes smí setup libovolného raidu editovat
+  kdokoli s rolí RL.
+- **Upgrade class emoji** — až bude mít guild vlastní custom emoji (test server zatím ne), doplnit
+  `DISCORD_EMOJI_*`; do té doby běží Unicode fallback (`discord-emoji.ts#emojiFor`).
+- **Migrace dat z Raid Helperu** přes jejich REST API.
 
 ---
 

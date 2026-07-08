@@ -226,6 +226,12 @@ Aktuálně implementované vertikály:
 - `/` (dashboard) + `/calendar` + `/api/calendar/[token]` — read-only přehled a měsíční kalendář
   (raidy + absence), iCal odběr do Google/Apple kalendáře. Viz „Kalendář, dashboard a iCal odběr" výše.
 - Discord publikace (oznámení raidu + setup) — viz „Discord publikace" níže.
+- Docházka (`attendance_record`, per `(raid_id, user_id)`) — při přechodu raidu do `DONE` se v
+  `raids/[raidId]/actions.ts#setRaidStatus()` roster (distinct userId ze CONFIRMED+BENCH assignmentů)
+  automaticky naseeduje: `PRESENT`, nebo `ABSENCE` + `note` má-li hráč aktivní absenci pokrývající den
+  raidu (čistá funkce `attendance-seed.ts#deriveSeededAttendance`, idempotentní `on conflict do nothing`).
+  RL/ADMIN pak ručně přeznačí (`setAttendance()`, 6 stavů) v panelu na detailu raidu
+  (`attendance-panel.tsx`, viditelný jen v `DONE`); ostatní jen čtou.
 
 Create/update/cancel/setup raidu je omezené na role `RAID_LEADER`/`ADMIN` — predikát `canManageRaids()`
 v `src/lib/auth.ts`, vynucený v server actions přes lokální `requireRaidLeader()` a zrcadlený v UI
@@ -261,5 +267,5 @@ jen pro absence-conflict ping). TODO(multi-room): časem víc kanálů → přej
   zprávou (editace zprávy nepinguje), snapshot se pak přepíše.
 
 Zatím neimplementováno (existuje jen jako schema/spec, viz `docs/spec.md` §7–8): drag-and-drop v setup
-builderu, přepínač „jen někteří RL" pro setup, auto-lock raidu podle času, `AttendanceRecord`, `Note`,
-WCL import háčky, skutečné DM hráčům (fáze 2 s hostovaným botem).
+builderu, přepínač „jen někteří RL" pro setup, auto-lock raidu podle času, `Note`, WCL import háčky,
+skutečné DM hráčům (fáze 2 s hostovaným botem).

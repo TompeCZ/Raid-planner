@@ -1,20 +1,34 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { raid, signup, signupCharacter, character, signupStatus, user } from "@/db/schema";
+import {
+  raid,
+  signup,
+  signupCharacter,
+  character,
+  signupStatus,
+  user,
+  assignment,
+  absence,
+  attendanceRecord,
+  attendanceStatus,
+  auditLog,
+} from "@/db/schema";
 import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { resolveDisplayName } from "@/lib/display-name";
 import { editDiscordMessage, postDiscordMessage, type DiscordMessagePayload } from "@/lib/discord-webhook";
-import { formatRaidDateTimeLabel } from "@/lib/local-date";
+import { formatRaidDateTimeLabel, toPragueDateKey } from "@/lib/local-date";
 import { getMainCharacterNamesByUserId } from "@/lib/main-character";
 import { buildAnnouncementContent } from "./discord-announcement";
+import { deriveSeededAttendance, type SeedAbsenceRange } from "./attendance-seed";
 import { readRaidForm } from "../raid-validation";
 import { canTransitionRaidStatus, isRaidEditable } from "../raid-status";
 
 type RaidStatus = (typeof raid.status.enumValues)[number];
+export type AttendanceStatus = (typeof attendanceStatus.enumValues)[number];
 
 const SIGNUP_STATUSES = signupStatus.enumValues;
 
@@ -114,13 +128,55 @@ export async function getRaidPageData(raidId: string) {
     displayName: resolveDisplayName({ displayName: r.displayName }, mainNames.get(r.userId) ?? null),
   }));
 
+  const attendance = raidRow.status === "DONE" ? await getAttendanceRows(raidId) : [];
+
   return {
     raid: raidRow,
     myCharacters,
     mySignup: mySignup ?? null,
     mySignupCharacterIds,
     roster,
+    attendance,
   };
+}
+
+export type AttendanceRow = {
+  userId: string;
+  displayName: string;
+  assignmentStatus: (typeof assignment.status.enumValues)[number] | null;
+  status: AttendanceStatus;
+  note: string | null;
+};
+
+/** Řádky pro panel docházky (jen raid.status === DONE) — role badge ze assignment, jméno resolvnuté přes hlavní postavu. */
+async function getAttendanceRows(raidId: string): Promise<AttendanceRow[]> {
+  const rows = await db
+    .select({
+      userId: attendanceRecord.userId,
+      displayName: user.displayName,
+      status: attendanceRecord.status,
+      note: attendanceRecord.note,
+    })
+    .from(attendanceRecord)
+    .innerJoin(user, eq(user.id, attendanceRecord.userId))
+    .where(eq(attendanceRecord.raidId, raidId))
+    .orderBy(user.displayName);
+
+  const assignmentRows = await db
+    .select({ userId: assignment.userId, status: assignment.status })
+    .from(assignment)
+    .where(eq(assignment.raidId, raidId));
+  const assignmentStatusByUserId = new Map(assignmentRows.map((a) => [a.userId, a.status]));
+
+  const mainNames = await getMainCharacterNamesByUserId(rows.map((r) => r.userId));
+
+  return rows.map((r) => ({
+    userId: r.userId,
+    displayName: resolveDisplayName({ displayName: r.displayName }, mainNames.get(r.userId) ?? null),
+    assignmentStatus: assignmentStatusByUserId.get(r.userId) ?? null,
+    status: r.status,
+    note: r.note,
+  }));
 }
 
 /** Upraví raid — jen RAID_LEADER/ADMIN, a jen dokud raid není v koncovém stavu. */
@@ -137,6 +193,64 @@ export async function updateRaid(raidId: string, formData: FormData) {
   revalidatePath(`/raids/${raidId}`);
 }
 
+/**
+ * Seeduje počáteční docházku pro roster raidu (distinct userId z assignmentů,
+ * CONFIRMED i BENCH) — voláno výhradně z `setRaidStatus` uvnitř přechodu do
+ * DONE, ve stejné transakci jako update stavu. Idempotentní (on conflict do
+ * nothing), takže opakovaný přechod DONE nepřepíše ruční úpravy RL.
+ */
+async function seedAttendanceForRaid(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  raidRow: typeof raid.$inferSelect,
+  recordedById: string,
+) {
+  const rosterRows = await tx
+    .selectDistinct({ userId: assignment.userId })
+    .from(assignment)
+    .where(eq(assignment.raidId, raidRow.id));
+  const rosterUserIds = rosterRows.map((r) => r.userId);
+  if (rosterUserIds.length === 0) return;
+
+  const absenceRows = await tx
+    .select({ userId: absence.userId, fromDate: absence.fromDate, toDate: absence.toDate, note: absence.note })
+    .from(absence)
+    .where(and(inArray(absence.userId, rosterUserIds), isNull(absence.deletedAt)));
+
+  const absencesByUser = new Map<string, SeedAbsenceRange[]>();
+  for (const row of absenceRows) {
+    const list = absencesByUser.get(row.userId) ?? [];
+    list.push({ fromDate: row.fromDate, toDate: row.toDate, note: row.note });
+    absencesByUser.set(row.userId, list);
+  }
+
+  const pragueDateKey = toPragueDateKey(raidRow.startsAt);
+  const seeded = deriveSeededAttendance(rosterUserIds, absencesByUser, pragueDateKey);
+
+  for (const entry of seeded) {
+    await tx
+      .insert(attendanceRecord)
+      .values({
+        raidId: raidRow.id,
+        userId: entry.userId,
+        status: entry.status,
+        note: entry.note,
+        source: "MANUAL",
+        recordedBy: recordedById,
+      })
+      .onConflictDoNothing({ target: [attendanceRecord.raidId, attendanceRecord.userId] });
+  }
+
+  // Přímo tx.insert místo logAudit() — tenhle záznam musí být součástí stejné
+  // transakce jako seedování, logAudit() píše přes `db`, ne přes `tx`.
+  await tx.insert(auditLog).values({
+    actorId: recordedById,
+    action: "attendance_seeded",
+    targetType: "raid",
+    targetId: raidRow.id,
+    description: `Docházka vygenerována (${rosterUserIds.length} hráčů).`,
+  });
+}
+
 /** Ruční přechod stavu raidu (LOCKED/DONE/CANCELLED/znovu OPEN) — jen RAID_LEADER/ADMIN. */
 export async function setRaidStatus(raidId: string, status: RaidStatus) {
   const appUser = await requireRaidLeader();
@@ -146,7 +260,13 @@ export async function setRaidStatus(raidId: string, status: RaidStatus) {
     throw new Error(`Přechod ${raidRow.status} -> ${status} není povolen.`);
   }
 
-  await db.update(raid).set({ status }).where(eq(raid.id, raidId));
+  await db.transaction(async (tx) => {
+    await tx.update(raid).set({ status }).where(eq(raid.id, raidId));
+    if (status === "DONE") {
+      await seedAttendanceForRaid(tx, raidRow, appUser.id);
+    }
+  });
+
   await logAudit({
     actorId: appUser.id,
     action: "raid_status_changed",
@@ -155,6 +275,42 @@ export async function setRaidStatus(raidId: string, status: RaidStatus) {
     description: `${raidRow.instance}: ${raidRow.status} -> ${status}`,
   });
   revalidatePath("/raids");
+  revalidatePath(`/raids/${raidId}`);
+}
+
+/** Ruční značení docházky (6 stavů) — jen RAID_LEADER/ADMIN, kdykoli po vzniku raidu. */
+export async function setAttendance(
+  raidId: string,
+  userId: string,
+  status: AttendanceStatus,
+  note?: string | null,
+) {
+  const appUser = await requireRaidLeader();
+  await requireRaid(raidId);
+
+  const [userRow] = await db.select({ displayName: user.displayName }).from(user).where(eq(user.id, userId)).limit(1);
+
+  await db
+    .insert(attendanceRecord)
+    .values({
+      raidId,
+      userId,
+      status,
+      note: note?.trim() || null,
+      recordedBy: appUser.id,
+    })
+    .onConflictDoUpdate({
+      target: [attendanceRecord.raidId, attendanceRecord.userId],
+      set: { status, note: note?.trim() || null, recordedBy: appUser.id, recordedAt: new Date() },
+    });
+
+  await logAudit({
+    actorId: appUser.id,
+    action: "attendance_marked",
+    targetType: "raid",
+    targetId: raidId,
+    description: `${userRow?.displayName ?? userId}: ${status}`,
+  });
   revalidatePath(`/raids/${raidId}`);
 }
 

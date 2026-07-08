@@ -4,6 +4,7 @@ import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
 import { getRaidPageData } from "./actions";
 import { SignupForm } from "./signup-form";
 import { RaidHeader } from "./raid-header";
+import { AttendancePanel } from "./attendance-panel";
 
 export default async function RaidDetailPage({
   params,
@@ -17,7 +18,7 @@ export default async function RaidDetailPage({
   const data = await getRaidPageData(raidId).catch(() => null);
   if (!data) notFound();
 
-  const { raid, myCharacters, mySignup, mySignupCharacterIds, roster } = data;
+  const { raid, myCharacters, mySignup, mySignupCharacterIds, roster, attendance } = data;
 
   return (
     <main>
@@ -61,6 +62,13 @@ export default async function RaidDetailPage({
           </li>
         ))}
       </ul>
+
+      {raid.status === "DONE" && (
+        <>
+          <h2>Docházka</h2>
+          <AttendancePanel raidId={raid.id} attendance={attendance} readOnly={!canManageRaids(appUser)} />
+        </>
+      )}
     </main>
   );
 }

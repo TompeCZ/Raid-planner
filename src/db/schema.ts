@@ -55,6 +55,7 @@ export const attendanceStatus = pgEnum("attendance_status", [
   "LATE_NO_EXCUSE",
   "NO_SHOW",
   "LEFT_EARLY",
+  "ABSENCE",
 ]);
 export const attendanceSource = pgEnum("attendance_source", ["MANUAL", "WCL_IMPORT"]);
 export const noteVisibility = pgEnum("note_visibility", ["LEADERSHIP"]);
@@ -299,23 +300,38 @@ export type Absence = typeof absence.$inferSelect;
 export type NewAbsence = typeof absence.$inferInsert;
 
 /* -------------------------------------------------------------------------- */
-/* AttendanceRecord  (ground-truth docházky; 1:1 na assignment)               */
+/* AttendanceRecord  (ground-truth docházky; per (raid_id, user_id), ne per   */
+/* assignment — role CONFIRMED/BENCH se bere ze assignment při čtení)        */
 /* -------------------------------------------------------------------------- */
-export const attendanceRecord = pgTable("attendance_record", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  assignmentId: uuid("assignment_id")
-    .notNull()
-    .unique()
-    .references(() => assignment.id, { onDelete: "cascade" }),
-  status: attendanceStatus("status").notNull(),
-  source: attendanceSource("source").notNull().default("MANUAL"),
-  recordedBy: uuid("recorded_by")
-    .notNull()
-    .references(() => user.id, { onDelete: "restrict" }),
-  recordedAt: timestamp("recorded_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const attendanceRecord = pgTable(
+  "attendance_record",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    raidId: uuid("raid_id")
+      .notNull()
+      .references(() => raid.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    status: attendanceStatus("status").notNull(),
+    // Důvod u ABSENCE (seedováno z absence.note) nebo ruční poznámka RL.
+    note: text("note"),
+    source: attendanceSource("source").notNull().default("MANUAL"),
+    recordedBy: uuid("recorded_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    recordedAt: timestamp("recorded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique("attendance_record_raid_user_uq").on(t.raidId, t.userId),
+    index("attendance_record_raid_id_idx").on(t.raidId),
+  ],
+);
+
+export type AttendanceRecord = typeof attendanceRecord.$inferSelect;
+export type NewAttendanceRecord = typeof attendanceRecord.$inferInsert;
 
 /* -------------------------------------------------------------------------- */
 /* Note  (vedení, LEADERSHIP)                                                 */

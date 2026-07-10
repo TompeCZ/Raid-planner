@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import type { CSSProperties } from "react";
 import { createRaid } from "./actions";
 import { fieldForRaidFormError } from "./raid-validation";
+import { DateTimeQuarterInput } from "./datetime-quarter-input";
 
 const SIGNUP_MODES = ["ALL", "SINGLE"] as const;
 
@@ -12,7 +13,7 @@ const DEFAULT_VALUES = {
   startsAt: "",
   endsAt: "",
   signupMode: "SINGLE" as (typeof SIGNUP_MODES)[number],
-  capacity: "20",
+  capacity: "25",
   notes: "",
 };
 
@@ -63,22 +64,22 @@ export function RaidForm() {
       </label>
       <label>
         Začátek
-        <input
+        <br />
+        <DateTimeQuarterInput
           name="startsAt"
-          type="datetime-local"
           value={values.startsAt}
-          onChange={(e) => setField("startsAt", e.target.value)}
+          onChange={(v) => setField("startsAt", v)}
           required
           style={fieldStyle("startsAt")}
         />
       </label>
       <label>
         Konec
-        <input
+        <br />
+        <DateTimeQuarterInput
           name="endsAt"
-          type="datetime-local"
           value={values.endsAt}
-          onChange={(e) => setField("endsAt", e.target.value)}
+          onChange={(v) => setField("endsAt", v)}
           required
           style={fieldStyle("endsAt")}
         />

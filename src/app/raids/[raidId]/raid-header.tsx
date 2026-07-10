@@ -5,6 +5,7 @@ import type { CSSProperties } from "react";
 import type { Raid } from "@/db/schema";
 import { announceRaidToDiscord, updateRaid, setRaidStatus } from "./actions";
 import { fieldForRaidFormError } from "../raid-validation";
+import { DateTimeQuarterInput } from "../datetime-quarter-input";
 import {
   RAID_STATUS_TRANSITIONS,
   RAID_STATUS_ACTION_LABELS,
@@ -119,22 +120,22 @@ export function RaidHeader({ raid, canManage }: { raid: Raid; canManage: boolean
         </label>
         <label>
           Začátek
-          <input
+          <br />
+          <DateTimeQuarterInput
             name="startsAt"
-            type="datetime-local"
             value={values.startsAt}
-            onChange={(e) => setField("startsAt", e.target.value)}
+            onChange={(v) => setField("startsAt", v)}
             required
             style={fieldStyle("startsAt")}
           />
         </label>
         <label>
           Konec
-          <input
+          <br />
+          <DateTimeQuarterInput
             name="endsAt"
-            type="datetime-local"
             value={values.endsAt}
-            onChange={(e) => setField("endsAt", e.target.value)}
+            onChange={(v) => setField("endsAt", v)}
             required
             style={fieldStyle("endsAt")}
           />

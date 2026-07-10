@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pragueDateKeyPlusDays, toPragueDateKey } from "./local-date";
+import { pragueDateKeyMinusMonths, pragueDateKeyPlusDays, toPragueDateKey } from "./local-date";
 
 describe("toPragueDateKey", () => {
   it("pozdní večerní UTC čas přes půlnoc (léto, CEST = UTC+2) spadne na SPRÁVNÝ (pozdější) pražský den", () => {
@@ -56,5 +56,19 @@ describe("pragueDateKeyPlusDays", () => {
       "2026-10-27",
       "2026-10-28",
     ]);
+  });
+});
+
+describe("pragueDateKeyMinusMonths", () => {
+  it("-1 měsíc z běžného data odečte kalendářní měsíc", () => {
+    expect(pragueDateKeyMinusMonths(new Date("2026-07-10T12:00:00Z"), 1)).toBe("2026-06-10");
+  });
+
+  it("den se neořízne, přeteče do dalšího měsíce (31. květen -1 měsíc -> duben nemá 31 dní)", () => {
+    expect(pragueDateKeyMinusMonths(new Date("2026-05-31T12:00:00Z"), 1)).toBe("2026-05-01");
+  });
+
+  it("přechod přes přelom roku", () => {
+    expect(pragueDateKeyMinusMonths(new Date("2026-01-15T12:00:00Z"), 1)).toBe("2025-12-15");
   });
 });

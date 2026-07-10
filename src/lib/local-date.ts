@@ -41,3 +41,15 @@ export function pragueDateKeyPlusDays(from: Date, days: number): string {
   anchor.setUTCDate(anchor.getUTCDate() + days);
   return toPragueDateKey(anchor);
 }
+
+/**
+ * Pražský den-klíč přesně `months` měsíců zpět od `from`. Pozor: `Date` den
+ * NEořízne, pokud cílový měsíc nemá tolik dní — přeteče do dalšího měsíce
+ * (31. květen − 1 měsíc = 1. květen, ne 30. duben). Stejná kotva na poledne
+ * UTC jako `pragueDateKeyPlusDays`, bezpečná vůči DST.
+ */
+export function pragueDateKeyMinusMonths(from: Date, months: number): string {
+  const [y, m, d] = toPragueDateKey(from).split("-").map(Number);
+  const anchor = new Date(Date.UTC(y, m - 1 - months, d, 12, 0, 0));
+  return toPragueDateKey(anchor);
+}

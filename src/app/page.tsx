@@ -45,6 +45,7 @@ export default async function DashboardPage() {
         <Link href="/raids">Raidy</Link>
         <Link href="/absences">Absence</Link>
         <Link href="/calendar">Kalendář</Link>
+        <Link href="/stats">Statistiky</Link>
       </nav>
 
       <h2>Příštích 7 dní</h2>

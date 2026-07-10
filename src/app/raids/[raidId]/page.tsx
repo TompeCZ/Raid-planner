@@ -5,6 +5,7 @@ import { getRaidPageData } from "./actions";
 import { SignupForm } from "./signup-form";
 import { RaidHeader } from "./raid-header";
 import { AttendancePanel } from "./attendance-panel";
+import { AttendanceSummaryBar } from "./attendance-summary-bar";
 
 export default async function RaidDetailPage({
   params,
@@ -66,6 +67,7 @@ export default async function RaidDetailPage({
       {raid.status === "DONE" && (
         <>
           <h2>Docházka</h2>
+          <AttendanceSummaryBar attendance={attendance} />
           <AttendancePanel raidId={raid.id} attendance={attendance} readOnly={!canManageRaids(appUser)} />
         </>
       )}

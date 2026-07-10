@@ -120,13 +120,53 @@ export async function getRaidPageData(raidId: string) {
     rosterBySignupId.set(row.signupId, entry);
   }
 
+  // Hráči, které RL přiřadil do setupu ručně mimo přihlášené (setup builderu
+  // sekce „mimo přihlášené" — `otherCharacters`), tedy bez vlastního signupu.
+  // Zobrazí se v „Přihlášení hráči" taky, ať je vidět celý roster na jednom
+  // místě, ne jen v setup builderu.
+  const signedUpUserIds = new Set(Array.from(rosterBySignupId.values()).map((r) => r.userId));
+  const assignmentOnlyRows = await db
+    .select({
+      userId: assignment.userId,
+      displayName: user.displayName,
+      characterName: character.name,
+    })
+    .from(assignment)
+    .innerJoin(user, eq(user.id, assignment.userId))
+    .innerJoin(character, eq(character.id, assignment.characterId))
+    .where(eq(assignment.raidId, raidId));
+
+  const assignmentOnlyBySignupId = new Map<
+    string,
+    { signupId: string; status: "SETUP_ONLY"; userId: string; displayName: string; characterNames: string[] }
+  >();
+  for (const row of assignmentOnlyRows) {
+    if (signedUpUserIds.has(row.userId)) continue; // má vlastní signup, už je v rosterBySignupId
+    // Pseudo-signupId (žádný signup neexistuje) — jen ať má React klíč a shodná struktura.
+    const pseudoId = `setup-only:${row.userId}`;
+    const entry = assignmentOnlyBySignupId.get(pseudoId) ?? {
+      signupId: pseudoId,
+      status: "SETUP_ONLY" as const,
+      userId: row.userId,
+      displayName: row.displayName,
+      characterNames: [],
+    };
+    entry.characterNames.push(row.characterName);
+    assignmentOnlyBySignupId.set(pseudoId, entry);
+  }
+
   // Zobrazovací jméno hráče ostatním = jeho hlavní postava, jinak Discord displayName.
-  const rosterEntries = Array.from(rosterBySignupId.values());
+  const rosterEntries = [
+    ...Array.from(rosterBySignupId.values()),
+    ...Array.from(assignmentOnlyBySignupId.values()),
+  ];
   const mainNames = await getMainCharacterNamesByUserId(rosterEntries.map((r) => r.userId));
-  const roster = rosterEntries.map((r) => ({
-    ...r,
-    displayName: resolveDisplayName({ displayName: r.displayName }, mainNames.get(r.userId) ?? null),
-  }));
+  const roster = rosterEntries
+    .map((r) => ({
+      ...r,
+      displayName: resolveDisplayName({ displayName: r.displayName }, mainNames.get(r.userId) ?? null),
+    }))
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
 
   const attendance = raidRow.status === "DONE" ? await getAttendanceRows(raidId) : [];
 

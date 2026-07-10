@@ -58,7 +58,7 @@ export default async function RaidDetailPage({
         {roster.length === 0 && <li style={{ listStyle: "none" }}>Zatím nikdo.</li>}
         {roster.map((r) => (
           <li key={r.signupId} style={{ listStyle: "none" }}>
-            {r.displayName} — {r.status}
+            {r.displayName} — {r.status === "SETUP_ONLY" ? "přidán do setupu" : r.status}
             {r.characterNames.length > 0 ? ` (${r.characterNames.join(", ")})` : ""}
           </li>
         ))}

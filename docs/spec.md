@@ -215,9 +215,6 @@ Loguje se: raid vytvořen/zrušen, hráč benchnut, přepsaná cizí absence, se
 - **Upgrade class emoji** — až bude mít guild vlastní custom emoji (test server zatím ne), doplnit
   `DISCORD_EMOJI_*`; do té doby běží Unicode fallback (`discord-emoji.ts#emojiFor`).
 - **Migrace dat z Raid Helperu** přes jejich REST API.
-- **„Přihlášení hráči" na detailu raidu — hráči přidaní mimo signup** — promyslet, jestli do seznamu
-  zároveň zobrazit i hráče, kterého RL přidal ručně ze setup builderu (`otherCharacters`, mimo
-  přihlášené) a je v setupu, i když se sám nepřihlásil.
 
 ---
 

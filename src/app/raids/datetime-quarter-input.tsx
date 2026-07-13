@@ -9,6 +9,9 @@ type Props = {
   onChange: (value: string) => void;
   required?: boolean;
   style?: CSSProperties;
+  /** Hodina/minuta, kterou zobrazit, dokud hodnota nemá vlastní čas (nový raid). */
+  defaultHour?: string;
+  defaultMinute?: string;
 };
 
 /**
@@ -17,8 +20,8 @@ type Props = {
  * Skládá se do stejného "YYYY-MM-DDTHH:mm" tvaru, který čte
  * `raid-validation.ts#parseDateTimeLocal`, přes skrytý input se skutečným `name`.
  */
-export function DateTimeQuarterInput({ name, value, onChange, required, style }: Props) {
-  const { date, hour, minute } = splitDateTimeQuarter(value);
+export function DateTimeQuarterInput({ name, value, onChange, required, style, defaultHour, defaultMinute }: Props) {
+  const { date, hour, minute } = splitDateTimeQuarter(value, { hour: defaultHour, minute: defaultMinute });
   // Existující hodnota mimo čtvrthodinu (starší data) se nabídne navíc, ať se
   // needitovaná neschová a needitovaná i nezmění tichým uložením na "00".
   const minuteChoices: readonly string[] = (MINUTE_OPTIONS as readonly string[]).includes(minute)

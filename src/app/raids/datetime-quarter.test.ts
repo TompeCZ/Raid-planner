@@ -21,6 +21,19 @@ describe("splitDateTimeQuarter", () => {
       minute: "41",
     });
   });
+
+  it("prázdná hodnota respektuje per-instance default hodinu (raid-form: 19 pro začátek, 22 pro konec)", () => {
+    expect(splitDateTimeQuarter("", { hour: "19" })).toEqual({ date: "", hour: "19", minute: "00" });
+    expect(splitDateTimeQuarter("", { hour: "22" })).toEqual({ date: "", hour: "22", minute: "00" });
+  });
+
+  it("existující hodnota má přednost před defaultem", () => {
+    expect(splitDateTimeQuarter("2026-07-14T18:30", { hour: "19" })).toEqual({
+      date: "2026-07-14",
+      hour: "18",
+      minute: "30",
+    });
+  });
 });
 
 describe("joinDateTimeQuarter", () => {

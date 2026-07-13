@@ -71,6 +71,7 @@ export function RaidForm() {
           onChange={(v) => setField("startsAt", v)}
           required
           style={fieldStyle("startsAt")}
+          defaultHour="19"
         />
       </label>
       <label>
@@ -82,6 +83,7 @@ export function RaidForm() {
           onChange={(v) => setField("endsAt", v)}
           required
           style={fieldStyle("endsAt")}
+          defaultHour="22"
         />
       </label>
       <label>

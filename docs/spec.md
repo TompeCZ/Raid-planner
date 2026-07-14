@@ -215,6 +215,21 @@ Loguje se: raid vytvořen/zrušen, hráč benchnut, přepsaná cizí absence, se
 - **Upgrade class emoji** — až bude mít guild vlastní custom emoji (test server zatím ne), doplnit
   `DISCORD_EMOJI_*`; do té doby běží Unicode fallback (`discord-emoji.ts#emojiFor`).
 - **Migrace dat z Raid Helperu** přes jejich REST API.
+- **Discord oznámení raidu — rozpad podle role** — `announceRaidToDiscord`/`buildAnnouncementContent`
+  dnes ukazuje jen celkový počet přihlášených; rozdělit na ikona Tank + počet, ikona Healer + počet,
+  ikona DPS + počet (stejné ikony jako `discord-emoji.ts#emojiFor`). Jiné místo než „Discord setup
+  embed — sumář rolí nahoře" výše — tohle je oznámení při `OPEN`, ne setup embed při `LOCKED`.
+- **Setup builder — filtr rolí i na „mimo přihlášené"** — `setup-board.tsx`: `roleFilter` (tlačítka
+  TANK/HEALER/MELEE/RANGED) dnes filtruje jen `filteredRoster` (přihlášené postavy), ne
+  `filteredOther`/`eligibleOtherCharacters` (sekce „Přidat postavu mimo přihlášené") — ta se filtruje
+  jen textovým hledáním. Aplikovat stejný `roleFilter` na obě sekce.
+- **Kalendář — detail dne jen na klik, ne na hover** — `calendar-grid.tsx`: buňka dne má
+  `onMouseEnter={() => setSelectedDay(...)}`, což na desktopu ukáže detail bez kliknutí; sjednotit
+  chování s mobilním rozložením (jen `onClick`), zbavit se `onMouseEnter`.
+- **Kalendář — klik na raid v mřížce dne rovnou na detail raidu** — `calendar-grid.tsx`: `RaidMarkerPill`
+  přímo v buňce dne (ne v rozbaleném detailu pod mřížkou) není `Link`, jen součást tlačítka dne, takže
+  klik jen vybere den. Proklik na `/raids/[raidId]` dnes funguje až v rozbaleném detailu dole — přidat
+  ho i přímo na pill v mřížce.
 
 ---
 

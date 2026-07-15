@@ -45,7 +45,7 @@ export async function getDossierData(subjectUserId: string, period: PeriodFilter
   const [userRow] = await db
     .select({ id: user.id, displayName: user.displayName, guildRank: user.guildRank })
     .from(user)
-    .where(eq(user.id, subjectUserId))
+    .where(and(eq(user.id, subjectUserId), isNull(user.deletedAt)))
     .limit(1);
   if (!userRow) throw new Error("Hráč nenalezen.");
 

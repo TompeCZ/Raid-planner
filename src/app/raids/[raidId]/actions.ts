@@ -106,10 +106,12 @@ export async function getRaidPageData(raidId: string) {
       status: (typeof SIGNUP_STATUSES)[number];
       userId: string;
       displayName: string;
-      characterNames: string[];
-      // Souběžně s characterNames — pro kontextové psaní poznámky z detailu
-      // raidu (RL vidí jméno, actions.ts potřebuje id, viz raids/[raidId]/page.tsx).
-      characterIds: string[];
+      // Jeden zdroj pravdy (id+name spolu) — pro kontextové psaní poznámky
+      // z detailu raidu (viz raids/[raidId]/page.tsx#AddNoteButton). Dřív
+      // dvě souběžná pole (characterNames/characterIds) svedená jen shodou
+      // indexů byla past: jakmile se sáhlo na characterIds[0], vybralo to
+      // fakticky náhodnou postavu z ALL-pool signupu.
+      characters: { id: string; name: string }[];
     }
   >();
   for (const row of rosterRows) {
@@ -118,11 +120,9 @@ export async function getRaidPageData(raidId: string) {
       status: row.status,
       userId: row.userId,
       displayName: row.displayName,
-      characterNames: [],
-      characterIds: [],
+      characters: [],
     };
-    if (row.characterName) entry.characterNames.push(row.characterName);
-    if (row.characterId) entry.characterIds.push(row.characterId);
+    if (row.characterId && row.characterName) entry.characters.push({ id: row.characterId, name: row.characterName });
     rosterBySignupId.set(row.signupId, entry);
   }
 
@@ -150,8 +150,7 @@ export async function getRaidPageData(raidId: string) {
       status: "SETUP_ONLY";
       userId: string;
       displayName: string;
-      characterNames: string[];
-      characterIds: string[];
+      characters: { id: string; name: string }[];
     }
   >();
   for (const row of assignmentOnlyRows) {
@@ -163,11 +162,9 @@ export async function getRaidPageData(raidId: string) {
       status: "SETUP_ONLY" as const,
       userId: row.userId,
       displayName: row.displayName,
-      characterNames: [],
-      characterIds: [],
+      characters: [],
     };
-    entry.characterNames.push(row.characterName);
-    entry.characterIds.push(row.characterId);
+    entry.characters.push({ id: row.characterId, name: row.characterName });
     assignmentOnlyBySignupId.set(pseudoId, entry);
   }
 

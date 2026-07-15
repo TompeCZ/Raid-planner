@@ -61,10 +61,10 @@ export default async function RaidDetailPage({
           <li key={r.signupId} style={{ listStyle: "none", marginBottom: "0.3rem" }}>
             <div>
               {r.displayName} — {r.status === "SETUP_ONLY" ? "přidán do setupu" : r.status}
-              {r.characterNames.length > 0 ? ` (${r.characterNames.join(", ")})` : ""}
+              {r.characters.length > 0 ? ` (${r.characters.map((c) => c.name).join(", ")})` : ""}
             </div>
             {canAccessNotes(appUser) && (
-              <AddNoteButton subjectUserId={r.userId} raidId={raid.id} characterId={r.characterIds[0]} />
+              <AddNoteButton subjectUserId={r.userId} raidId={raid.id} characters={r.characters} />
             )}
           </li>
         ))}

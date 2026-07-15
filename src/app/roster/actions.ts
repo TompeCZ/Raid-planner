@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   note,
@@ -63,7 +63,11 @@ export async function createNote(input: {
   if (!NOTE_SENTIMENTS.includes(input.sentiment)) throw new Error("Neplatný sentiment.");
   if (!NOTE_VISIBILITIES.includes(input.visibility)) throw new Error("Neplatná viditelnost.");
 
-  const [subjectRow] = await db.select({ id: user.id }).from(user).where(eq(user.id, input.subjectUserId)).limit(1);
+  const [subjectRow] = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(and(eq(user.id, input.subjectUserId), isNull(user.deletedAt)))
+    .limit(1);
   if (!subjectRow) throw new Error("Hráč nenalezen.");
 
   const characterId = input.characterId || null;
@@ -166,15 +170,8 @@ export async function updateNote(input: {
  */
 export async function deleteNote(input: { noteId: string }) {
   const appUser = await requireLeadership();
-
-  const [existing] = await db.select().from(note).where(eq(note.id, input.noteId)).limit(1);
-  if (!existing || existing.deletedAt !== null) throw new Error("Poznámka nenalezena.");
-
-  const isAuthor = existing.authorId === appUser.id;
-  if (existing.visibility === "PRIVATE") {
-    // PRIVATE: vidí, edituje i maže pouze autor — ADMIN ji nevidí, a tedy ani nesmí smazat.
-    if (!isAuthor) throw new Error("Poznámka nenalezena.");
-  } else if (!isAuthor && appUser.role !== "ADMIN") {
+  const existing = await requireVisibleNote(input.noteId, appUser);
+  if (existing.authorId !== appUser.id && appUser.role !== "ADMIN") {
     throw new Error("Smazat smí jen autor poznámky, nebo ADMIN.");
   }
 
@@ -206,7 +203,11 @@ export async function setGuildRank(input: { userId: string; guildRank: GuildRank
     throw new Error("Neplatný guild rank.");
   }
 
-  const [userRow] = await db.select({ id: user.id }).from(user).where(eq(user.id, input.userId)).limit(1);
+  const [userRow] = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(and(eq(user.id, input.userId), isNull(user.deletedAt)))
+    .limit(1);
   if (!userRow) throw new Error("Hráč nenalezen.");
 
   await db.update(user).set({ guildRank: input.guildRank }).where(eq(user.id, input.userId));

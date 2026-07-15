@@ -50,12 +50,19 @@ export type NoteWithContext = {
  * Poznámky k hráči viditelné `currentUserId` — join na autora, postavu a raid
  * (jméno + datum). Řazeno pinned DESC, createdAt DESC; rozdělení na "obecné" vs.
  * "z raidů" a seskupení po raidech dělá až UI vrstva (`/roster/[userId]`).
+ *
+ * `authorDisplayName` jde přes `resolveDisplayName` (hlavní postava, jinak
+ * Discord displayName) — stejná konvence jako všude jinde v appce (viz
+ * `getRosterOverview` níže). `characterName` je záměrně JEN raw join na
+ * `character.name` bez `resolveDisplayName` — to je konkrétní kontextová
+ * postava poznámky (ne zobrazovací jméno hráče) a leftJoin bez `deletedAt`
+ * filtru je záměr: poznámka na později smazanou postavu má zůstat čitelná.
  */
 export async function getNotesForSubject(
   subjectUserId: string,
   currentUserId: string,
 ): Promise<NoteWithContext[]> {
-  return db
+  const rows = await db
     .select({
       id: note.id,
       authorId: note.authorId,
@@ -80,6 +87,14 @@ export async function getNotesForSubject(
     .leftJoin(raid, eq(raid.id, note.raidId))
     .where(and(eq(note.subjectUserId, subjectUserId), visibleNotesFilter(currentUserId)))
     .orderBy(desc(note.pinned), desc(note.createdAt));
+
+  const authorIds = [...new Set(rows.map((r) => r.authorId))];
+  const mainCharacters = await getMainCharactersByUserId(authorIds);
+
+  return rows.map((r) => ({
+    ...r,
+    authorDisplayName: resolveDisplayName({ displayName: r.authorDisplayName }, mainCharacters.get(r.authorId)?.name ?? null),
+  }));
 }
 
 export type RosterOverviewRow = {
@@ -107,8 +122,9 @@ export type RosterOverviewRow = {
  * s tou první. Cena (načtení všech viditelných poznámek do paměti) je při
  * velikosti guildy zanedbatelná. Bez tohohle filtru by `noteCount`/
  * `hasOpenConcern` ignorovaly zvolené období úplně — a protože `hasOpenConcern`
- * nemá žádný "resolved" stav, po delší době provozu by ho mělo skoro každé UI
- * nastavené jako "CONCERN" navždy, bez ohledu na filtr.
+ * nemá žádný "resolved" stav, po delší době provozu by skoro každý hráč měl
+ * aspoň jednu poznámku nastavenou jako "CONCERN" a flag by zůstal navždy
+ * zapnutý bez ohledu na filtr.
  */
 export async function getRosterOverview(
   currentUserId: string,

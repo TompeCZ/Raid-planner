@@ -9,21 +9,26 @@ const SENTIMENTS: NoteSentimentValue[] = ["POSITIVE", "NEUTRAL", "CONCERN"];
 type Props = {
   subjectUserId: string;
   raidId: string;
-  characterId?: string;
+  characters: { id: string; name: string }[];
 };
 
 /**
- * Kontextové psaní poznámky přímo z detailu raidu — raidId a characterId jsou
- * předvyplněné a needitovatelné (na rozdíl od plného formuláře na dossieru,
- * kde jsou volitelné selecty). Poznámky vznikají v proudu vedení raidu; kdyby
- * se musely psát jen ze samostatné /roster sekce, většina by nikdy nevznikla.
+ * Kontextové psaní poznámky přímo z detailu raidu — raidId je předvyplněný
+ * a needitovatelný (na rozdíl od plného formuláře na dossieru). Postava se
+ * liší podle počtu: 0 → bez postavy (žádný select), 1 → napevno předvyplněná
+ * (žádný select, jen text), 2+ → select s volbou "— bez postavy —" jako
+ * default. Nikdy needitovatelně tiše nevybírej první postavu z pole — u
+ * ALL-pool signupu s víc postavami by to bylo fakticky náhodné přilepení
+ * poznámky k jiné postavě, než o které RL psal; poznámka bez postavy je
+ * platná a lepší odpověď, než hádat.
  */
-export function AddNoteButton({ subjectUserId, raidId, characterId }: Props) {
+export function AddNoteButton({ subjectUserId, raidId, characters }: Props) {
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState("");
   const [category, setCategory] = useState<NoteCategoryValue>("OTHER");
   const [sentiment, setSentiment] = useState<NoteSentimentValue>("NEUTRAL");
   const [visibility, setVisibility] = useState<NoteVisibilityValue>("LEADERSHIP");
+  const [selectedCharacterId, setSelectedCharacterId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -35,6 +40,8 @@ export function AddNoteButton({ subjectUserId, raidId, characterId }: Props) {
     );
   }
 
+  const fixedCharacter = characters.length === 1 ? characters[0] : null;
+
   function handleSubmit() {
     setError(null);
     startTransition(async () => {
@@ -42,7 +49,7 @@ export function AddNoteButton({ subjectUserId, raidId, characterId }: Props) {
         await createNote({
           subjectUserId,
           raidId,
-          characterId: characterId ?? null,
+          characterId: fixedCharacter ? fixedCharacter.id : selectedCharacterId || null,
           category,
           sentiment,
           visibility,
@@ -75,6 +82,17 @@ export function AddNoteButton({ subjectUserId, raidId, characterId }: Props) {
         placeholder="Poznámka…"
         style={{ minWidth: 220 }}
       />
+      {fixedCharacter && <span style={{ fontSize: "0.75rem", opacity: 0.7 }}>Postava: {fixedCharacter.name}</span>}
+      {!fixedCharacter && characters.length > 1 && (
+        <select value={selectedCharacterId} onChange={(e) => setSelectedCharacterId(e.target.value)}>
+          <option value="">— bez postavy —</option>
+          {characters.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      )}
       <span style={{ display: "flex", gap: "0.3rem", flexWrap: "wrap" }}>
         <select value={category} onChange={(e) => setCategory(e.target.value as NoteCategoryValue)}>
           {CATEGORIES.map((c) => (

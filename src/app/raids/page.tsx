@@ -35,8 +35,12 @@ export default async function RaidsPage() {
               {" "}
               ({r.signupMode}, kapacita {r.capacity})
               {r.status === "LOCKED" && " · uzamčeno"}
+              {r.status === "DONE" && " · proběhl (DONE)"}
+              {r.status === "CANCELLED" && " · zrušeno"}
             </span>
-            {r.endsAt < now && <strong style={{ color: "#e8b339" }}> · už proběhl</strong>}
+            {r.endsAt < now && r.status !== "DONE" && r.status !== "CANCELLED" && (
+              <strong style={{ color: "#e8b339" }}> · už proběhl</strong>
+            )}
             {conflictedRaidIds.has(r.id) && (
               <strong style={{ color: "#ff6b6b" }}> · ⚠ absence-konflikt v setupu</strong>
             )}

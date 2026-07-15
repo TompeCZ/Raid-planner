@@ -1,27 +1,29 @@
 import "server-only";
-import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { db } from "@/db/client";
 import { note, noteRevision, user, character, raid } from "@/db/schema";
 import { getAttendanceRowsInPeriod } from "./attendance-query";
 import { computeAttendanceStats, type AttendanceStats } from "./attendance-stats";
 import { resolveDisplayName } from "./display-name";
+import { toPragueDateKey } from "./local-date";
 import { getMainCharactersByUserId } from "./main-character";
-import type { PeriodFilter } from "./period-filter";
-import { compareRosterEntries, isNoteVisibleTo, type GuildRank } from "./notes-visibility";
+import { isWithinPeriod, type PeriodFilter } from "./period-filter";
+import { aggregateNotesBySubject, compareRosterEntries, isNoteVisibleTo, type GuildRank } from "./notes-visibility";
 
 export type NoteCategory = (typeof note.category.enumValues)[number];
 export type NoteSentiment = (typeof note.sentiment.enumValues)[number];
 export type NoteVisibilityValue = (typeof note.visibility.enumValues)[number];
 
 /**
- * Centrální filtr viditelnosti — LEADERSHIP vidí kdokoli z vedení, PRIVATE jen
- * její autor. Logický ekvivalent `notes-visibility.ts#isNoteVisibleTo` (ten je
- * čistý a testovaný, tenhle je SQL WHERE pro dotazy) — drž obě verze v souladu.
+ * Centrální filtr viditelnosti — smazaná poznámka není viditelná nikomu (ani
+ * autorovi), jinak LEADERSHIP vidí kdokoli z vedení, PRIVATE jen její autor.
+ * Logický ekvivalent `notes-visibility.ts#isNoteVisibleTo` (ten je čistý a
+ * testovaný, tenhle je SQL WHERE pro dotazy) — drž obě verze v souladu.
  */
 export function visibleNotesFilter(currentUserId: string) {
-  return or(
-    eq(note.visibility, "LEADERSHIP"),
-    and(eq(note.visibility, "PRIVATE"), eq(note.authorId, currentUserId)),
+  return and(
+    isNull(note.deletedAt),
+    or(eq(note.visibility, "LEADERSHIP"), and(eq(note.visibility, "PRIVATE"), eq(note.authorId, currentUserId))),
   );
 }
 
@@ -98,6 +100,15 @@ export type RosterOverviewRow = {
  * metrik, viz zadání), počet viditelných poznámek a otevřený CONCERN flag
  * agregovaný přes stejný `visibleNotesFilter`. Řazeno guildRank -> jméno
  * (`compareRosterEntries`, stejné pořadí jako SQL `ORDER BY guild_rank`).
+ *
+ * Poznámky se filtrují na `period` V JS (`isWithinPeriod`/`toPragueDateKey`),
+ * ne v SQL — pražská timezone smí žít jen na jednom místě (stejně jako
+ * `getAttendanceRowsInPeriod`), aby se druhá SQL implementace časem nerozešla
+ * s tou první. Cena (načtení všech viditelných poznámek do paměti) je při
+ * velikosti guildy zanedbatelná. Bez tohohle filtru by `noteCount`/
+ * `hasOpenConcern` ignorovaly zvolené období úplně — a protože `hasOpenConcern`
+ * nemá žádný "resolved" stav, po delší době provozu by ho mělo skoro každé UI
+ * nastavené jako "CONCERN" navždy, bez ohledu na filtr.
  */
 export async function getRosterOverview(
   currentUserId: string,
@@ -119,17 +130,12 @@ export async function getRosterOverview(
     attendanceByUser.set(row.userId, list);
   }
 
-  const noteAgg = await db
-    .select({
-      subjectUserId: note.subjectUserId,
-      noteCount: sql<number>`count(*)::int`,
-      hasOpenConcern: sql<boolean>`bool_or(${note.sentiment} = 'CONCERN')`,
-      noteCategories: sql<NoteCategory[]>`array_agg(distinct ${note.category})`,
-    })
+  const visibleNotes = await db
+    .select({ subjectUserId: note.subjectUserId, category: note.category, sentiment: note.sentiment, createdAt: note.createdAt })
     .from(note)
-    .where(visibleNotesFilter(currentUserId))
-    .groupBy(note.subjectUserId);
-  const noteAggByUserId = new Map(noteAgg.map((r) => [r.subjectUserId, r]));
+    .where(visibleNotesFilter(currentUserId));
+  const notesInPeriod = visibleNotes.filter((n) => isWithinPeriod(toPragueDateKey(n.createdAt), period));
+  const noteAggByUserId = aggregateNotesBySubject(notesInPeriod);
 
   const rows: RosterOverviewRow[] = userRows.map((u) => {
     const mainChar = mainCharacters.get(u.id);
@@ -161,7 +167,7 @@ export type NoteRevisionRow = {
 /** Revize poznámky — nejdřív ověří, že `currentUserId` na tu poznámku vůbec vidí (LEADERSHIP/PRIVATE). */
 export async function getNoteRevisions(noteId: string, currentUserId: string): Promise<NoteRevisionRow[]> {
   const [noteRow] = await db
-    .select({ visibility: note.visibility, authorId: note.authorId })
+    .select({ visibility: note.visibility, authorId: note.authorId, deletedAt: note.deletedAt })
     .from(note)
     .where(eq(note.id, noteId))
     .limit(1);

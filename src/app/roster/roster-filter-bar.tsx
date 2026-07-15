@@ -84,7 +84,7 @@ export function RosterFilterBar({ periodFilter, extraFilters }: Props) {
 
       <label>
         <input type="checkbox" checked={onlyConcern} onChange={(e) => setOnlyConcern(e.target.checked)} /> Jen otevřené
-        concerns
+        concerns (za zvolené období)
       </label>
 
       <button type="button" onClick={() => navigate({ from, to })}>

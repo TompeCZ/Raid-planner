@@ -16,6 +16,7 @@ import {
   type User,
 } from "@/db/schema";
 import { canAccessNotes, getCurrentAppUser } from "@/lib/auth";
+import { isNoteVisibleTo } from "@/lib/notes-visibility";
 
 const NOTE_CATEGORIES = noteCategory.enumValues;
 const NOTE_SENTIMENTS = noteSentiment.enumValues;
@@ -106,13 +107,23 @@ export async function createNote(input: {
   revalidateNoteRoutes(input.subjectUserId, raidId);
 }
 
-/** Editovat smí jen autor. PRIVATE mimo autora hlásíme jako "nenalezena", ať neprozradíme existenci. */
-async function requireEditableNote(noteId: string, appUser: User) {
+/**
+ * Poznámka existuje, není smazaná a volající na ni vidí (LEADERSHIP/PRIVATE) —
+ * přes `isNoteVisibleTo`, ne ručně duplikovaným pravidlem. Neviditelnou,
+ * smazanou nebo neexistující hlásí jednotně jako "nenalezena", ať neprozradí
+ * existenci cizí PRIVATE poznámky.
+ */
+async function requireVisibleNote(noteId: string, appUser: User) {
   const [existing] = await db.select().from(note).where(eq(note.id, noteId)).limit(1);
-  if (!existing) throw new Error("Poznámka nenalezena.");
-  if (existing.visibility === "PRIVATE" && existing.authorId !== appUser.id) {
+  if (!existing || !isNoteVisibleTo(existing, appUser.id)) {
     throw new Error("Poznámka nenalezena.");
   }
+  return existing;
+}
+
+/** Editovat smí jen autor — nad viditelností (`requireVisibleNote`) navíc kontrola autorství. */
+async function requireEditableNote(noteId: string, appUser: User) {
+  const existing = await requireVisibleNote(noteId, appUser);
   if (existing.authorId !== appUser.id) throw new Error("Upravit smí jen autor poznámky.");
   return existing;
 }
@@ -147,11 +158,17 @@ export async function updateNote(input: {
   revalidateNoteRoutes(existing.subjectUserId, existing.raidId);
 }
 
+/**
+ * Soft delete — nikdy `db.delete`. Zbytek aplikace nemaže natvrdo (`user`,
+ * `character`, `absence` mají stejný `deletedAt` vzor) a tohle neměla být
+ * výjimka: hard delete by zničil `note_revision` (ON DELETE cascade) a
+ * poznámky nepíšou do `audit_log`, takže by po smazání nezůstala žádná stopa.
+ */
 export async function deleteNote(input: { noteId: string }) {
   const appUser = await requireLeadership();
 
   const [existing] = await db.select().from(note).where(eq(note.id, input.noteId)).limit(1);
-  if (!existing) throw new Error("Poznámka nenalezena.");
+  if (!existing || existing.deletedAt !== null) throw new Error("Poznámka nenalezena.");
 
   const isAuthor = existing.authorId === appUser.id;
   if (existing.visibility === "PRIVATE") {
@@ -161,19 +178,21 @@ export async function deleteNote(input: { noteId: string }) {
     throw new Error("Smazat smí jen autor poznámky, nebo ADMIN.");
   }
 
-  await db.delete(note).where(eq(note.id, existing.id));
+  await db.update(note).set({ deletedAt: new Date() }).where(eq(note.id, existing.id));
   revalidateNoteRoutes(existing.subjectUserId, existing.raidId);
 }
 
 /**
- * Připnutí nahoru v rámci sekce — stejné pravidlo jako editace (jen autor;
- * PRIVATE mimo autora "nenalezena"), pin je mutace obsahu poznámky stejně
- * jako `updateNote`, ne samostatná "team highlight" akce (zadání to explicitně
- * nerozlišuje, tohle je nejbližší analogie k `updateNote`).
+ * Připnutí nahoru v rámci sekce je kurace streamu vedení, ne mutace obsahu
+ * jako `updateNote` — kdokoli z vedení smí připnout jakoukoli poznámku, na
+ * kterou vidí (`requireVisibleNote`), autorství se nekontroluje. Typický
+ * případ: RL2 chce zvýraznit důležitou poznámku, kterou napsal RL1. PRIVATE
+ * cizí poznámka se ošetří sama tím, že přes viditelnost neprojde — žádná
+ * zvláštní větev pro PRIVATE tu není potřeba.
  */
 export async function togglePinned(input: { noteId: string }) {
   const appUser = await requireLeadership();
-  const existing = await requireEditableNote(input.noteId, appUser);
+  const existing = await requireVisibleNote(input.noteId, appUser);
 
   await db.update(note).set({ pinned: !existing.pinned }).where(eq(note.id, existing.id));
   revalidateNoteRoutes(existing.subjectUserId, existing.raidId);

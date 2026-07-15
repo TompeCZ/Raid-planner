@@ -384,6 +384,11 @@ export const note = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // Soft delete — stejný vzor jako user.deletedAt/character.deletedAt. Nikdy
+    // hard delete: note_revision má ON DELETE cascade (pojistka, kdyby se hard
+    // delete v budoucnu vrátil), ale mazání natvrdo by zničilo historii editací
+    // a poznámky nepíšou do audit_log, takže by po sobě nezanechalo stopu.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (t) => [
     // Postava MUSÍ patřit subjektu poznámky — vynuceno na DB úrovni stejným

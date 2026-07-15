@@ -15,7 +15,9 @@ export function RosterTable({ rows }: { rows: RosterOverviewRow[] }) {
         <tr>
           <th style={headerCellStyle}>Hráč</th>
           <th style={headerCellStyle}>Rank</th>
-          <th style={headerCellStyle}>Poznámky</th>
+          <th style={headerCellStyle} title="Počet za zvolené období, viz filtr výše">
+            Poznámky (za období)
+          </th>
           <th style={headerCellStyle}>Docházka</th>
         </tr>
       </thead>

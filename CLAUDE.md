@@ -238,12 +238,21 @@ Aktuálně implementované vertikály:
   polymorfní podle `targetType` jako předchozí skeleton — composite FK `note_character_subject_fk`
   (`MATCH SIMPLE`) vynutí, že postava patří subjektu. `visibility` `LEADERSHIP`/`PRIVATE` — `PRIVATE`
   vidí/edituje/maže jen autor, ani ADMIN ji nevidí (`src/lib/notes-query.ts#visibleNotesFilter`, čistý
-  ekvivalent testovaný v `notes-visibility.ts#isNoteVisibleTo`). Editace zakládá `note_revision` se
-  starým tělem (transakce s UPDATE). **Nikdy nepíše do `audit_log`** (ten je veřejný, poznámky ne).
+  ekvivalent testovaný v `notes-visibility.ts#isNoteVisibleTo`). `pinned` je výjimka z pravidla "jen
+  autor" — připnout/odepnout smí kdokoli z vedení, kdo na poznámku vidí (`togglePinned()` staví na
+  `requireVisibleNote()`, ne `requireEditableNote()`), protože pin kuruje stream vedení, needituje obsah.
+  Editace zakládá `note_revision` se starým tělem (transakce s UPDATE). **Nikdy nepíše do `audit_log`**
+  (ten je veřejný, poznámky ne). Mazání je **soft delete** (`note.deletedAt`, stejný vzor jako
+  `user`/`character`) — nikdy `db.delete`, jinak by `ON DELETE CASCADE` na `note_revision` smazal
+  i historii editací a bez `audit_log` záznamu by po poznámce nezůstala žádná stopa; smazaná poznámka
+  není viditelná nikomu (`isNoteVisibleTo` to kontroluje ještě před `visibility`).
   `getRosterOverview()` recykluje `attendance-query.ts#getAttendanceRowsInPeriod` +
-  `attendance-stats.ts#computeAttendanceStats` — žádná nová logika metrik. `user.guildRank` (nullable
-  enum, ručně nastavováno) řadí roster; sync z Battle.net API je BACKLOG. Kontextové psaní poznámky
-  přímo z rosteru raidu (`raids/[raidId]/add-note-button.tsx`), ne jen ze samostatné `/roster` sekce.
+  `attendance-stats.ts#computeAttendanceStats` — žádná nová logika metrik; poznámkovou agregaci
+  (`noteCount`/`hasOpenConcern`/kategorie) filtruje na zvolené období v JS
+  (`notes-visibility.ts#aggregateNotesBySubject` + `isWithinPeriod`), ne v SQL — pražská timezone má žít
+  jen na jednom místě, stejně jako u docházky. `user.guildRank` (nullable enum, ručně nastavováno) řadí
+  roster; sync z Battle.net API je BACKLOG. Kontextové psaní poznámky přímo z rosteru raidu
+  (`raids/[raidId]/add-note-button.tsx`), ne jen ze samostatné `/roster` sekce.
 
 Create/update/cancel/setup raidu je omezené na role `RAID_LEADER`/`ADMIN` — predikát `canManageRaids()`
 v `src/lib/auth.ts`, vynucený v server actions přes lokální `requireRaidLeader()` a zrcadlený v UI

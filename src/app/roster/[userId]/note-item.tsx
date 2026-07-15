@@ -185,7 +185,11 @@ export function NoteItem({ note, canEdit, canDelete }: Props) {
             upraveno {formatDate(note.updatedAt)} {revisionsOpen ? "▲" : "▼"}
           </button>
         )}
-        {canEdit && !editing && (
+        {!editing && (
+          // Pin = kurace streamu vedení, ne editace obsahu — kdokoli z vedení
+          // smí připnout jakoukoli poznámku, na kterou vidí (viz togglePinned).
+          // Tahle komponenta renderuje jen poznámky, které currentUser už vidí,
+          // takže žádná další podmínka tu není potřeba.
           <button type="button" onClick={handleTogglePin} disabled={isPending}>
             {note.pinned ? "Odepnout" : "Připnout"}
           </button>

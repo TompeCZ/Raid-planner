@@ -119,12 +119,25 @@ Pole:
 - `sentiment` — `POSITIVE` | `NEUTRAL` | `CONCERN`
 - `visibility` — `LEADERSHIP` (vidí kdokoli z vedení) | `PRIVATE` (vidí, edituje i maže **pouze autor** —
   ani ADMIN ji nevidí, a tedy ani nesmí smazat)
-- `pinned` (bool) — připnuto nahoru v rámci sekce na `/roster/[userId]`
+- `pinned` (bool) — kurace streamu vedení, ne mutace obsahu: připnout/odepnout smí **kdokoli z vedení**,
+  kdo na poznámku vidí (ne jen autor) — na rozdíl od editace/mazání. Připnuto nahoru v rámci sekce na
+  `/roster/[userId]`.
 - `body`, `createdAt`, `updatedAt`
+- `deletedAt` (nullable) — **soft delete**, stejný vzor jako `user.deletedAt`/`character.deletedAt`.
+  Nikdy hard delete: smazalo by to i `NoteRevision` (má `ON DELETE CASCADE`) a poznámky nepíšou do
+  `AuditLog`, takže by po smazání nezůstala žádná stopa. Smazaná poznámka není viditelná nikomu
+  (ani autorovi) — kontrola běží ještě před `visibility`.
 
-Zápis: vytvořit smí kdokoli z vedení; editovat jen autor; smazat autor nebo ADMIN (PRIVATE jen autor).
-Gate je vždy na serveru v datové vrstvě (`src/lib/notes-query.ts#visibleNotesFilter`), nikdy jen
-schováním v UI.
+Zápis: vytvořit smí kdokoli z vedení; editovat jen autor; smazat (soft) autor nebo ADMIN (PRIVATE jen
+autor); připnout/odepnout kdokoli z vedení, kdo poznámku vidí. Gate je vždy na serveru v datové vrstvě
+(`src/lib/notes-query.ts#visibleNotesFilter`, čistý ekvivalent `notes-visibility.ts#isNoteVisibleTo`),
+nikdy jen schováním v UI.
+
+Agregace pro `/roster` (počet viditelných poznámek, otevřený `CONCERN` flag) se filtruje na zvolené
+období **v JS** (`isWithinPeriod`/`toPragueDateKey`), ne v SQL — pražská timezone smí žít jen na jednom
+místě (stejně jako `getAttendanceRowsInPeriod`), aby se druhá SQL implementace časem nerozešla s tou
+první. Bez filtru na období by `CONCERN` flag po delší době provozu prakticky nikdy nezmizel (žádný
+"resolved" stav), takže by filtr časem přestal cokoliv rozlišovat.
 
 ### NoteRevision
 Historie editací poznámek (leadership-only, přes viditelnost mateřské `Note`).
@@ -173,10 +186,11 @@ Loguje se: raid vytvořen/zrušen, hráč benchnut, přepsaná cizí absence, se
 - **RAID_LEADER** — vytváří a edituje **jakýkoliv** raid i setup, značí docházku, píše a čte Notes, posílá setup do Discordu. Všechny zásahy leadera jdou do **veřejného** AuditLogu (Notes výjimečně ne, viz AuditLog výše).
 - **MEMBER** — spravuje vlastní postavy, přihlašuje se, nastavuje vlastní absence, vidí veřejnou historii a audit log. **Nevidí Notes** ani `/roster` (server-side redirect, ne jen schované UI).
 
-`PRIVATE` poznámka je výjimka z hierarchie rolí: vidí, edituje i maže ji **pouze její autor** — ani
-ADMIN ji nevidí, natož edituje/maže. `LEADERSHIP` poznámky vidí/píše kdokoli s rolí ADMIN nebo
-RAID_LEADER, ale editovat smí jen autor (smazat autor nebo ADMIN). Nastavit `guildRank` smí kdokoli
-z vedení.
+`PRIVATE` poznámka je výjimka z hierarchie rolí: vidí, edituje, maže i (od)připíná ji **pouze její
+autor** — ani ADMIN ji nevidí, natož edituje/maže/připíná. `LEADERSHIP` poznámky vidí/píše kdokoli
+s rolí ADMIN nebo RAID_LEADER, ale editovat/mazat smí jen autor (smazat i ADMIN); **připnout/odepnout
+smí kdokoli z vedení**, kdo na poznámku vidí — pin je kurace streamu, ne editace obsahu, takže
+nepodléhá pravidlu "jen autor". Nastavit `guildRank` smí kdokoli z vedení.
 
 ---
 

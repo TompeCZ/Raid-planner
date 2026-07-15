@@ -36,7 +36,7 @@ npm test                  # unit testy (Vitest, `vitest run`)
 npx tsc --noEmit           # typecheck (samostatný lint skript není definován)
 ```
 
-⚠️ Nikdy nepoužívej `drizzle-kit push` / `db:push`. Tiše shodí ručně psané DB objekty, které Drizzle neumí vyjádřit ve `schema.ts` — exclusion constraint (`btree_gist`), triggery a partial unique indexy. Schema se mění výhradně: `db:generate` → ruční doplnění constraintů/indexů/triggerů do `drizzle/*.sql` → `db:migrate`.
+⚠️ Nikdy nepoužívej `drizzle-kit push` / `db:push`. Tiše shodí ručně psané DB objekty, které Drizzle neumí vyjádřit ve `schema.ts` — exclusion constraint (`btree_gist`), triggery, partial unique indexy a `ENABLE ROW LEVEL SECURITY` (deny-by-default RLS na všech tabulkách v `public`, bez policies — viz `drizzle/0009_enable_rls.sql`). Schema se mění výhradně: `db:generate` → ruční doplnění constraintů/indexů/triggerů/RLS do `drizzle/*.sql` → `db:migrate`.
 
 Unit testy (Vitest) žijí vedle testovaného kódu jako `*.test.ts` — čistě validace/přechody
 stavů/serializace (`raid-validation`, `raid-status`, `absence-validation`, `setup-validation`,

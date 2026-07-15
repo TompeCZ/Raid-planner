@@ -19,6 +19,10 @@ Konvence napříč modelem:
 - `discordId` — z OAuthu, slouží i pro @mention
 - `displayName`
 - `role` — `ADMIN` | `RAID_LEADER` | `MEMBER`
+- `guildRank` (nullable) — `GUILDMASTER` | `OFFICER` | `VETERAN` | `MEMBER` | `INITIATE` | `RECRUIT` | `ALT`.
+  Nullable záměrně: „nenastaveno" musí být odlišitelné od `MEMBER`. Plní se ručně vedením na `/roster`;
+  sync z Battle.net Profile API je BACKLOG (viz §8). Pořadí enumu je významné — Postgres řadí enum
+  podle pořadí deklarace, roster na `/roster` se řadí `ORDER BY guild_rank`.
 
 ### Character
 Postava patří Userovi.
@@ -96,12 +100,39 @@ Ground‑truth docházky. RL značí během/po raidu.
 - `recordedBy`, `recordedAt`
 
 ### Note
-Subjektivní poznámky vedení (druhá rovina historie).
-- `authorId`
-- `visibility` — zatím vždy `LEADERSHIP`
-- `targetType` — `RAID` | `USER` | `GENERAL`
-- `targetId` (nullable pro GENERAL)
-- `body`, `createdAt`
+Subjektivní poznámky vedení (druhá rovina historie). **Subject-anchored**, ne polymorfní podle
+`targetType` (tenhle model to nevyjádřil pro poznámku, která je zároveň k postavě i k raidu). Kotva je
+vždy hráč (`subjectUserId`); postava a raid jsou volitelný kontext plynoucí z toho, co je vyplněné:
+- jen `subjectUserId` → stálá poznámka k hráči
+- `+ raidId` → chování hráče v daném raidu
+- `+ raidId + characterId` → výkon konkrétní postavy v daném raidu
+
+Pole:
+- `authorId` (FK `user`)
+- `subjectUserId` (FK `user`) — kotva
+- `characterId` (nullable) — **composite FK `(characterId, subjectUserId) → Character(id, userId)`**,
+  `MATCH SIMPLE` (Postgres default; NIKDY `MATCH FULL`, ten by rozbil poznámky bez postavy). Stejný
+  trik jako `assignment_character_user_fk` — DB sama vynutí, že postava patří subjektu poznámky, bez
+  potřeby triggeru. Kontrola se neaplikuje, dokud je `characterId IS NULL`.
+- `raidId` (nullable FK `raid`, `ON DELETE RESTRICT`)
+- `category` — `PERFORMANCE` | `BEHAVIOR` | `ATTENDANCE` | `LOOT` | `RECRUITMENT` | `OTHER`
+- `sentiment` — `POSITIVE` | `NEUTRAL` | `CONCERN`
+- `visibility` — `LEADERSHIP` (vidí kdokoli z vedení) | `PRIVATE` (vidí, edituje i maže **pouze autor** —
+  ani ADMIN ji nevidí, a tedy ani nesmí smazat)
+- `pinned` (bool) — připnuto nahoru v rámci sekce na `/roster/[userId]`
+- `body`, `createdAt`, `updatedAt`
+
+Zápis: vytvořit smí kdokoli z vedení; editovat jen autor; smazat autor nebo ADMIN (PRIVATE jen autor).
+Gate je vždy na serveru v datové vrstvě (`src/lib/notes-query.ts#visibleNotesFilter`), nikdy jen
+schováním v UI.
+
+### NoteRevision
+Historie editací poznámek (leadership-only, přes viditelnost mateřské `Note`).
+- `noteId` (FK `note`, `ON DELETE CASCADE`)
+- `editedBy` (FK `user`)
+- `editedAt`
+- `previousBody` — snapshot těla PŘED editací (ne po); při každé editaci se založí nový řádek
+  v transakci společně s `UPDATE note`.
 
 ### AuditLog
 Veřejný, append‑only, jen smysluplné akce.
@@ -110,7 +141,7 @@ Veřejný, append‑only, jen smysluplné akce.
 - `timestamp`
 - **index na `(targetType, targetId)`**
 
-Loguje se: raid vytvořen/zrušen, hráč benchnut, přepsaná cizí absence, setup odeslán do Discordu, změněn `signupMode`, označena docházka. **Neloguje se** každý drag‑drop postavy mezi groupami.
+Loguje se: raid vytvořen/zrušen, hráč benchnut, přepsaná cizí absence, setup odeslán do Discordu, změněn `signupMode`, označena docházka. **Neloguje se** každý drag‑drop postavy mezi groupami. **Nikdy se sem nedostane nic o poznámkách** (`Note`/`NoteRevision`) — `audit_log` je veřejný, poznámky jsou neveřejná data o reálných lidech; jejich historie žije výhradně v `NoteRevision`.
 
 > Kalendář **není entita** — je to pohled nad Raidy + Absencemi.
 
@@ -138,9 +169,14 @@ Loguje se: raid vytvořen/zrušen, hráč benchnut, přepsaná cizí absence, se
 
 ## 3. Role a práva
 
-- **ADMIN** — vše.
-- **RAID_LEADER** — vytváří a edituje **jakýkoliv** raid i setup, značí docházku, píše a čte Notes, posílá setup do Discordu. Všechny zásahy leadera jdou do **veřejného** AuditLogu.
-- **MEMBER** — spravuje vlastní postavy, přihlašuje se, nastavuje vlastní absence, vidí veřejnou historii a audit log. **Nevidí Notes.**
+- **ADMIN** — skoro vše, **kromě** cizích `PRIVATE` poznámek (viz níže — ty nevidí ani ADMIN).
+- **RAID_LEADER** — vytváří a edituje **jakýkoliv** raid i setup, značí docházku, píše a čte Notes, posílá setup do Discordu. Všechny zásahy leadera jdou do **veřejného** AuditLogu (Notes výjimečně ne, viz AuditLog výše).
+- **MEMBER** — spravuje vlastní postavy, přihlašuje se, nastavuje vlastní absence, vidí veřejnou historii a audit log. **Nevidí Notes** ani `/roster` (server-side redirect, ne jen schované UI).
+
+`PRIVATE` poznámka je výjimka z hierarchie rolí: vidí, edituje i maže ji **pouze její autor** — ani
+ADMIN ji nevidí, natož edituje/maže. `LEADERSHIP` poznámky vidí/píše kdokoli s rolí ADMIN nebo
+RAID_LEADER, ale editovat smí jen autor (smazat autor nebo ADMIN). Nastavit `guildRank` smí kdokoli
+z vedení.
 
 ---
 
@@ -193,6 +229,9 @@ Loguje se: raid vytvořen/zrušen, hráč benchnut, přepsaná cizí absence, se
 
 ## 8. Backlog (fáze 2+, přidatelné bez přepisu)
 
+- **Sync guild ranku z Battle.net Profile API**, namespace `classicann-eu` — periodický job,
+  match roster postav na `character`, rank usera z main postavy, s ručním overridem (`user.guildRank`
+  zůstává ručně nastavitelný na `/roster` i po zavedení syncu — automat nesmí přepsat vědomý zásah RL).
 - **WCL import** — GraphQL API v2, OAuth client‑credentials (limit 3 600 bodů/h), report dle kódu → párování na postavy přes name+realm. Předvyplní `PRESENT`/`NO_SHOW`, RL potvrdí; `LATE_*` a `LEFT_EARLY` zůstávají ruční.
 - **DM notifikace** (vyžaduje hostovaného bota) — diskrétnější benched alert, kombinace s @mention.
   Vyžaduje připnutý Gateway/WebSocket bot (ne jen webhook) pro plnou obousměrnou integraci.

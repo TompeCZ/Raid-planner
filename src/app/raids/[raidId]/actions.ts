@@ -88,6 +88,7 @@ export async function getRaidPageData(raidId: string) {
       status: signup.status,
       userId: signup.userId,
       displayName: user.displayName,
+      characterId: character.id,
       characterName: character.name,
     })
     .from(signup)
@@ -106,6 +107,9 @@ export async function getRaidPageData(raidId: string) {
       userId: string;
       displayName: string;
       characterNames: string[];
+      // Souběžně s characterNames — pro kontextové psaní poznámky z detailu
+      // raidu (RL vidí jméno, actions.ts potřebuje id, viz raids/[raidId]/page.tsx).
+      characterIds: string[];
     }
   >();
   for (const row of rosterRows) {
@@ -115,8 +119,10 @@ export async function getRaidPageData(raidId: string) {
       userId: row.userId,
       displayName: row.displayName,
       characterNames: [],
+      characterIds: [],
     };
     if (row.characterName) entry.characterNames.push(row.characterName);
+    if (row.characterId) entry.characterIds.push(row.characterId);
     rosterBySignupId.set(row.signupId, entry);
   }
 
@@ -129,6 +135,7 @@ export async function getRaidPageData(raidId: string) {
     .select({
       userId: assignment.userId,
       displayName: user.displayName,
+      characterId: character.id,
       characterName: character.name,
     })
     .from(assignment)
@@ -138,7 +145,14 @@ export async function getRaidPageData(raidId: string) {
 
   const assignmentOnlyBySignupId = new Map<
     string,
-    { signupId: string; status: "SETUP_ONLY"; userId: string; displayName: string; characterNames: string[] }
+    {
+      signupId: string;
+      status: "SETUP_ONLY";
+      userId: string;
+      displayName: string;
+      characterNames: string[];
+      characterIds: string[];
+    }
   >();
   for (const row of assignmentOnlyRows) {
     if (signedUpUserIds.has(row.userId)) continue; // má vlastní signup, už je v rosterBySignupId
@@ -150,8 +164,10 @@ export async function getRaidPageData(raidId: string) {
       userId: row.userId,
       displayName: row.displayName,
       characterNames: [],
+      characterIds: [],
     };
     entry.characterNames.push(row.characterName);
+    entry.characterIds.push(row.characterId);
     assignmentOnlyBySignupId.set(pseudoId, entry);
   }
 

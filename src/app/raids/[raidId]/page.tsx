@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { canManageRaids, getCurrentAppUser } from "@/lib/auth";
+import { canAccessNotes, canManageRaids, getCurrentAppUser } from "@/lib/auth";
 import { getRaidPageData } from "./actions";
 import { SignupForm } from "./signup-form";
 import { RaidHeader } from "./raid-header";
 import { AttendancePanel } from "./attendance-panel";
 import { AttendanceSummaryBar } from "./attendance-summary-bar";
+import { AddNoteButton } from "./add-note-button";
 
 export default async function RaidDetailPage({
   params,
@@ -57,9 +58,14 @@ export default async function RaidDetailPage({
       <ul style={{ margin: "1rem 0", padding: 0 }}>
         {roster.length === 0 && <li style={{ listStyle: "none" }}>Zatím nikdo.</li>}
         {roster.map((r) => (
-          <li key={r.signupId} style={{ listStyle: "none" }}>
-            {r.displayName} — {r.status === "SETUP_ONLY" ? "přidán do setupu" : r.status}
-            {r.characterNames.length > 0 ? ` (${r.characterNames.join(", ")})` : ""}
+          <li key={r.signupId} style={{ listStyle: "none", marginBottom: "0.3rem" }}>
+            <div>
+              {r.displayName} — {r.status === "SETUP_ONLY" ? "přidán do setupu" : r.status}
+              {r.characterNames.length > 0 ? ` (${r.characterNames.join(", ")})` : ""}
+            </div>
+            {canAccessNotes(appUser) && (
+              <AddNoteButton subjectUserId={r.userId} raidId={raid.id} characterId={r.characterIds[0]} />
+            )}
           </li>
         ))}
       </ul>

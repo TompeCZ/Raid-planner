@@ -58,8 +58,26 @@ export const attendanceStatus = pgEnum("attendance_status", [
   "ABSENCE",
 ]);
 export const attendanceSource = pgEnum("attendance_source", ["MANUAL", "WCL_IMPORT"]);
-export const noteVisibility = pgEnum("note_visibility", ["LEADERSHIP"]);
-export const noteTargetType = pgEnum("note_target_type", ["RAID", "USER", "GENERAL"]);
+// Pořadí je významné — Postgres řadí enum podle pořadí deklarace, roster se řadí ORDER BY guild_rank.
+export const guildRank = pgEnum("guild_rank", [
+  "GUILDMASTER",
+  "OFFICER",
+  "VETERAN",
+  "MEMBER",
+  "INITIATE",
+  "RECRUIT",
+  "ALT",
+]);
+export const noteVisibility = pgEnum("note_visibility", ["LEADERSHIP", "PRIVATE"]);
+export const noteCategory = pgEnum("note_category", [
+  "PERFORMANCE",
+  "BEHAVIOR",
+  "ATTENDANCE",
+  "LOOT",
+  "RECRUITMENT",
+  "OTHER",
+]);
+export const noteSentiment = pgEnum("note_sentiment", ["POSITIVE", "NEUTRAL", "CONCERN"]);
 
 /* -------------------------------------------------------------------------- */
 /* User  (soft delete, nikdy hard delete)                                     */
@@ -69,6 +87,9 @@ export const user = pgTable("user", {
   discordId: text("discord_id").notNull().unique(),
   displayName: text("display_name").notNull(),
   role: userRole("role").notNull().default("MEMBER"),
+  // Nullable záměrně — "nenastaveno" musí být odlišitelné od "MEMBER". Plní se
+  // zatím ručně RL; sync z Battle.net Profile API je pozdější krok (BACKLOG).
+  guildRank: guildRank("guild_rank"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -334,7 +355,11 @@ export type AttendanceRecord = typeof attendanceRecord.$inferSelect;
 export type NewAttendanceRecord = typeof attendanceRecord.$inferInsert;
 
 /* -------------------------------------------------------------------------- */
-/* Note  (vedení, LEADERSHIP)                                                 */
+/* Note  (neveřejné poznámky vedení; subject-anchored, ne polymorfní)         */
+/*   - kotva je vždy subjectUserId; characterId/raidId jsou volitelný kontext */
+/*   - jen subjectUserId          -> stálá poznámka k hráči                  */
+/*   - + raidId                   -> chování hráče v daném raidu             */
+/*   - + raidId + characterId     -> výkon konkrétní postavy v daném raidu   */
 /* -------------------------------------------------------------------------- */
 export const note = pgTable(
   "note",
@@ -343,22 +368,67 @@ export const note = pgTable(
     authorId: uuid("author_id")
       .notNull()
       .references(() => user.id, { onDelete: "restrict" }),
+    subjectUserId: uuid("subject_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    characterId: uuid("character_id"), // nullable; composite FK níže
+    raidId: uuid("raid_id").references(() => raid.id, { onDelete: "restrict" }), // nullable
+    category: noteCategory("category").notNull().default("OTHER"),
+    sentiment: noteSentiment("sentiment").notNull().default("NEUTRAL"),
     visibility: noteVisibility("visibility").notNull().default("LEADERSHIP"),
-    targetType: noteTargetType("target_type").notNull(),
-    targetId: uuid("target_id"), // bez FK (polymorfní), NULL pro GENERAL
+    pinned: boolean("pinned").notNull().default(false),
     body: text("body").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
-    check(
-      "note_target_id_required",
-      sql`${t.targetType} = 'GENERAL' OR ${t.targetId} IS NOT NULL`,
-    ),
-    index("note_target_idx").on(t.targetType, t.targetId),
+    // Postava MUSÍ patřit subjektu poznámky — vynuceno na DB úrovni stejným
+    // composite FK trikem jako `assignment_character_user_fk` (opřeno o unique
+    // `character_id_user_id_key`). MATCH SIMPLE (Postgres default, žádná MATCH
+    // klauzule) — díky tomu se při character_id IS NULL FK vůbec nekontroluje
+    // (poznámka bez postavy), ale jakmile je vyplněné, vazba se vynutí. Nikdy
+    // MATCH FULL, ten by poznámky bez postavy rozbil.
+    foreignKey({
+      name: "note_character_subject_fk",
+      columns: [t.characterId, t.subjectUserId],
+      foreignColumns: [character.id, character.userId],
+    }),
+    check("note_body_not_blank", sql`length(btrim(${t.body})) > 0`),
+    index("note_subject_idx").on(t.subjectUserId, t.createdAt),
+    index("note_raid_idx").on(t.raidId),
+    index("note_author_idx").on(t.authorId),
   ],
 );
+
+export type Note = typeof note.$inferSelect;
+export type NewNote = typeof note.$inferInsert;
+
+/* -------------------------------------------------------------------------- */
+/* NoteRevision  (historie editací poznámek; leadership-only)                */
+/* -------------------------------------------------------------------------- */
+export const noteRevision = pgTable(
+  "note_revision",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    noteId: uuid("note_id")
+      .notNull()
+      .references(() => note.id, { onDelete: "cascade" }),
+    editedBy: uuid("edited_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    editedAt: timestamp("edited_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    previousBody: text("previous_body").notNull(), // snapshot těla PŘED editací
+  },
+  (t) => [index("note_revision_note_idx").on(t.noteId, t.editedAt)],
+);
+
+export type NoteRevision = typeof noteRevision.$inferSelect;
 
 /* -------------------------------------------------------------------------- */
 /* AuditLog  (veřejný, append-only)                                           */

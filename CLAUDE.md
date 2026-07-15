@@ -232,6 +232,18 @@ Aktuálně implementované vertikály:
   raidu (čistá funkce `attendance-seed.ts#deriveSeededAttendance`, idempotentní `on conflict do nothing`).
   RL/ADMIN pak ručně přeznačí (`setAttendance()`, 6 stavů) v panelu na detailu raidu
   (`attendance-panel.tsx`, viditelný jen v `DONE`); ostatní jen čtou.
+- Poznámky vedení (`/roster`, `/roster/[userId]`) — neveřejná data o hráčích, gate v datové vrstvě
+  (`canAccessNotes()` v `src/lib/auth.ts`, stejný predikát jako `canManageRaids()`), ne jen schované UI.
+  `note` je subject-anchored (kotva `subjectUserId`; `characterId`/`raidId` volitelný kontext), ne
+  polymorfní podle `targetType` jako předchozí skeleton — composite FK `note_character_subject_fk`
+  (`MATCH SIMPLE`) vynutí, že postava patří subjektu. `visibility` `LEADERSHIP`/`PRIVATE` — `PRIVATE`
+  vidí/edituje/maže jen autor, ani ADMIN ji nevidí (`src/lib/notes-query.ts#visibleNotesFilter`, čistý
+  ekvivalent testovaný v `notes-visibility.ts#isNoteVisibleTo`). Editace zakládá `note_revision` se
+  starým tělem (transakce s UPDATE). **Nikdy nepíše do `audit_log`** (ten je veřejný, poznámky ne).
+  `getRosterOverview()` recykluje `attendance-query.ts#getAttendanceRowsInPeriod` +
+  `attendance-stats.ts#computeAttendanceStats` — žádná nová logika metrik. `user.guildRank` (nullable
+  enum, ručně nastavováno) řadí roster; sync z Battle.net API je BACKLOG. Kontextové psaní poznámky
+  přímo z rosteru raidu (`raids/[raidId]/add-note-button.tsx`), ne jen ze samostatné `/roster` sekce.
 
 Create/update/cancel/setup raidu je omezené na role `RAID_LEADER`/`ADMIN` — predikát `canManageRaids()`
 v `src/lib/auth.ts`, vynucený v server actions přes lokální `requireRaidLeader()` a zrcadlený v UI
@@ -267,5 +279,5 @@ jen pro absence-conflict ping). TODO(multi-room): časem víc kanálů → přej
   zprávou (editace zprávy nepinguje), snapshot se pak přepíše.
 
 Zatím neimplementováno (existuje jen jako schema/spec, viz `docs/spec.md` §7–8): drag-and-drop v setup
-builderu, přepínač „jen někteří RL" pro setup, auto-lock raidu podle času, `Note`, WCL import háčky,
-skutečné DM hráčům (fáze 2 s hostovaným botem).
+builderu, přepínač „jen někteří RL" pro setup, auto-lock raidu podle času, WCL import háčky, skutečné
+DM hráčům (fáze 2 s hostovaným botem), sync guild ranku z Battle.net API.

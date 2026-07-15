@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AbsenceChip, RaidMarkerPill } from "@/app/calendar/day-markers";
-import { getCurrentAppUser } from "@/lib/auth";
+import { canAccessNotes, getCurrentAppUser } from "@/lib/auth";
 import { getDashboardRaids } from "./actions";
 
 const WEEKDAY_FORMAT = new Intl.DateTimeFormat("cs-CZ", {
@@ -46,6 +46,7 @@ export default async function DashboardPage() {
         <Link href="/absences">Absence</Link>
         <Link href="/calendar">Kalendář</Link>
         <Link href="/stats">Statistiky</Link>
+        {canAccessNotes(appUser) && <Link href="/roster">Roster</Link>}
       </nav>
 
       <h2>Příštích 7 dní</h2>

@@ -50,6 +50,13 @@
       "when": 1783523662111,
       "tag": "0006_overrated_mandroid",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784099509507,
+      "tag": "0007_perfect_polaris",
+      "breakpoints": true
     }
   ]
 }

@@ -57,6 +57,11 @@ export function canManageRaids(appUser: User): boolean {
   return appUser.role === "ADMIN" || appUser.role === "RAID_LEADER";
 }
 
+/** Poznámky vedení vidí a píší jen ADMIN a RAID_LEADER. */
+export function canAccessNotes(appUser: User): boolean {
+  return appUser.role === "ADMIN" || appUser.role === "RAID_LEADER";
+}
+
 export const getCurrentAppUser = cache(async (): Promise<User | null> => {
   const supabase = await createClient();
   const {
